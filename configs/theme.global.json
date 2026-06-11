@@ -1,0 +1,222 @@
+{
+  "token": {
+  "colorPrimary": "#166534",
+  "colorInfo": "#166534",
+  "colorSuccess": "#16A34A",
+  "colorWarning": "#CA8A04",
+  "colorError": "#DC2626",
+  "colorText": "#111827",
+  "colorTextSecondary": "#374151",
+  "colorTextTertiary": "#6B7280",
+  "colorTextQuaternary": "#9CA3AF",
+  "colorBgBase": "#FFFFFF",
+  "colorBgContainer": "#FFFFFF",
+  "colorBgElevated": "#FFFFFF",
+  "colorBgLayout": "#F5F7F5",
+  "colorFillAlter": "#F8FAF8",
+  "colorBorder": "#D1DCD1",
+  "colorBorderSecondary": "#E5ECE5",
+    "borderRadius": 4,
+    "borderRadiusLG": 4,
+    "borderRadiusSM": 2,
+    "borderRadiusXS": 2,
+    "fontFamily": "\"Segoe UI\", Roboto, Arial, sans-serif",
+    "fontSize": 14,
+    "fontSizeSM": 12,
+    "fontSizeLG": 16,
+    "lineHeight": 1.57,
+    "wireframe": false,
+    "boxShadow": "none",
+    "boxShadowSecondary": "none",
+      "padding": 20,
+    "paddingSM": 16,
+    "paddingMD": 20,
+    "paddingLG": 24,
+    "paddingXL": 32,
+    "margin": 20,
+    "marginSM": 16,
+    "marginMD": 20,
+    "marginLG": 24,
+    "marginXL": 32,
+    "controlHeight": 38,
+    "controlHeightLG": 42,
+    "controlHeightSM": 30
+  },
+  "components": {
+    "Layout": {
+    "bodyBg": "#F5F7F5",
+    "headerBg": "#FFFFFF",
+    "siderBg": "#FFFFFF",
+    "footerBg": "#F5F7F5",
+    "triggerBg": "#FFFFFF",
+    "triggerColor": "#374151"
+  },
+     "Menu": {
+    "itemHeight": 44,
+    "itemBorderRadius": 4,
+    "itemColor": "#374151",
+    "itemHoverColor": "#166534",
+    "itemHoverBg": "#F0FDF4",
+    "itemSelectedColor": "#166534",
+    "itemSelectedBg": "#DCFCE7",
+    "activeBarHeight": 0
+  },
+    "Card": {
+      "headerBg": "#F9FBF9",
+      "boxShadow": "none",
+          "bodyPadding": 24,
+      "headerHeight": 56,
+      "headerPadding": 20,
+      "borderRadiusLG": 4
+    },
+    "Table": {
+         "headerBg": "#EEF5EF",
+    "headerColor": "#111827",
+    "headerSplitColor": "#D1DCD1",
+    "borderColor": "#DDE5DD",
+    "rowHoverBg": "#F8FAF8",
+    "footerBg": "#FFFFFF",
+        "cellPaddingBlock": 16,
+      "cellPaddingInline": 20,
+      "cellPaddingBlockMD": 14,
+      "cellPaddingInlineMD": 18,
+      "cellPaddingBlockSM": 10,
+      "cellPaddingInlineSM": 14,
+      "borderColorSecondary": "#E5ECE5"
+    },
+    "Button": {
+      "borderRadius": 4,
+      "defaultShadow": "none",
+      "primaryShadow": "none",
+      "contentFontSize": 14,
+          "controlHeight": 38,
+      "paddingInline": 20
+    },
+    "Input": {
+      "borderRadius": 4,
+      "activeBorderColor": "#166534",
+    "hoverBorderColor": "#15803D"
+    },
+    "InputNumber": {
+      "borderRadius": 4
+    },
+    "Select": {
+      "borderRadius": 4,
+      "optionSelectedBg": "#DCFCE7",
+    "optionHoverBg": "#F0FDF4"
+    },
+    "DatePicker": {
+      "borderRadius": 4
+    },
+    "TimePicker": {
+      "borderRadius": 4
+    },
+    "TreeSelect": {
+      "borderRadius": 4,
+          "nodeHoverBg": "#EDF7F0",
+    "nodeSelectedBg": "#DDF3E4"
+    },
+    "Cascader": {
+      "borderRadius": 4
+    },
+    "AutoComplete": {
+      "borderRadius": 4
+    },
+    "Tabs": {
+      "itemColor": "#374151",
+      "itemHoverColor": "#116834",
+      "itemSelectedColor": "#166534",
+      "inkBarColor": "#166534"
+    },
+    "Pagination": {
+      "itemActiveBg": "#2F855A",
+      "itemActiveColor": "#FFFFFF",
+      "borderRadius": 4
+    },
+    "Tag": {
+      "borderRadiusSM": 4
+    },
+    "Badge": {
+      "colorBgContainer": "#FFFFFF"
+    },
+    "Drawer": {
+      "borderRadiusLG": 4,
+      "footerPaddingBlock": 16,
+      "footerPaddingInline": 24
+    },
+    "Modal": {
+      "borderRadiusLG": 4,
+      "headerBg": "#FFFFFF",
+      "contentBg": "#FFFFFF",
+        "paddingMD": 24,
+      "titleFontSize": 16
+    },
+    "Form": {
+      "labelColor": "#111827",
+      "labelFontSize": 14,
+        "itemMarginBottom": 20,
+      "verticalLabelPadding": "0 0 6px"
+    },
+    "Breadcrumb": {
+      "itemColor": "#6B7280",
+      "lastItemColor": "#111827",
+      "linkColor": "#166534"
+    },
+    "Collapse": {
+      "borderRadiusLG": 4,
+      "headerBg": "#FAFAFA",
+      "contentBg": "#FFFFFF",
+         "headerPadding": "16px 20px",
+      "contentPadding": "20px"
+    },
+    "Descriptions": {
+      "labelBg": "#FAFAFA",
+         "itemPaddingBottom": 16,
+         "borderColor": "#D1DCD1",
+         "padding": 20
+    },
+    "List": {
+      "itemPadding": "16px 20px"
+    },
+    "Popover": {
+      "borderRadiusLG": 4
+    },
+    "Tooltip": {
+      "borderRadius": 4
+    },
+    "Dropdown": {
+      "borderRadiusLG": 4
+    },
+    "Notification": {
+      "borderRadiusLG": 4
+    },
+    "Message": {
+      "contentBg": "#FFFFFF"
+    },
+    "Segmented": {
+      "trackBg": "#F5F6F8",
+      "itemSelectedBg": "#FFFFFF"
+    },
+    "Switch": {
+      "colorPrimary": "#116834"
+    },
+    "Steps": {
+      "colorPrimary": "#116834"
+    },
+    "Progress": {
+      "defaultColor": "#116834",
+      "remainingColor": "#EDF2ED"
+    },
+    "Tree": {
+      "nodeHoverBg": "#EDF7F0",
+      "nodeSelectedBg": "#DDF3E4"
+    },
+    "Upload": {
+      "colorBorder": "#D9D9D9"
+    },
+    "Skeleton": {
+      "gradientFromColor": "#F5F6F8",
+      "gradientToColor": "#FAFAFA"
+    }
+  }
+}

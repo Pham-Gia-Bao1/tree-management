@@ -21,7 +21,7 @@ const { Title, Text } = Typography;
 type TrainingRecord = (typeof TRAINING_RELATIONS)[number] & {
     key?: string;
 };
-export default function HomePage() {
+export default function TrainingRelations() {
     const { message } = App.useApp();
     const [search, setSearch] = useState('');
     const [modalOpen, setModalOpen] = useState(false);

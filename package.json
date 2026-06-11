@@ -1,5 +1,5 @@
 {
-  "name": "tree-management",
+  "name": "discipleship-tree",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,18 +9,26 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "next": "16.2.9",
+    "@ant-design/icons": "^6.2.5",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.108.0",
+    "@xyflow/react": "^12.11.0",
+    "antd": "^6.4.3",
+    "d3": "^7.9.0",
+    "next": "16.2.7",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "tailwind": "^4.0.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/d3": "^7.4.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
-    "tailwindcss": "^4",
+    "eslint-config-next": "16.2.7",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5"
   }
 }
