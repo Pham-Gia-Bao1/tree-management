@@ -7,7 +7,7 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import type { UserInput, UserRecord } from '@/types/user.types';
 import type { UserRole, UserStatus } from '@/types/database.types';
 
-const userRoles = new Set<UserRole>(['admin', 'user']);
+const userRoles = new Set<UserRole>(['ADMIN', 'MEMBER', 'PRE_REGISTERED_MENTOR']);
 const userStatuses = new Set<UserStatus>(['active', 'inactive', 'pending']);
 
 function mapUser(row: {
@@ -36,7 +36,7 @@ function mapUser(row: {
     };
 }
 
-function normalizeRole(value: unknown, fallback: UserRole = 'user') {
+function normalizeRole(value: unknown, fallback: UserRole = 'MEMBER') {
     if (value === undefined || value === null || value === '') {
         return fallback;
     }
