@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/jwt';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import type { AuthUser, UserRoleCode } from '@/types/auth';
+import type { AuthUser, UserRoleCode } from '@/types/auth.types';
 
 export async function GET() {
   try {
