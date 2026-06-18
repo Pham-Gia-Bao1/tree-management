@@ -1,167 +1,102 @@
-'use client';
+// app/api/auth/login/route.ts
+import { NextRequest } from 'next/server';
+import { cookies } from 'next/headers';
+import { apiFailure, apiSuccess } from '@/lib/api/api-response';
+import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { comparePassword } from '@/lib/auth/password';
+import { signToken } from '@/lib/auth/jwt';
+import type { UserRoleCode } from '@/types/auth';
 
-import {
-  Card,
-  Form,
-  Input,
-  Button,
-  Checkbox,
-  Typography,
-  Flex,
-} from 'antd';
-
-import {
-  MailOutlined,
-  LockOutlined,
-} from '@ant-design/icons';
-
-import { useRouter } from 'next/navigation';
-import { message } from 'antd';
-
-
-const { Title, Text, Link } = Typography;
-
-export default function LoginPage() {
-  const [form] = Form.useForm();
-
-  const router = useRouter();
-
-const onFinish = async (values: any) => {
+export async function POST(request: NextRequest) {
   try {
-    const response = await fetch(
-      '/api/auth/login',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(values),
-      }
-    );
+    const body = await request.json();
+    const email = body.email;
+    const password = body.password;
 
-    const result = await response.json();
+    const admin = getSupabaseAdminClient();
 
-    if (!response.ok) {
-      message.error(result.message);
-      return;
+    // NOTE: "users" no longer has a "role" column. Roles now come from the
+    // user_roles -> roles relation (RBAC). We embed that relation so we can
+    // read the role codes (e.g. 'ADMIN', 'MENTOR', 'MEMBER') for this user.
+    const { data: user, error } = await admin
+      .from('users')
+      .select(
+        `
+        *,
+        user_roles (
+          role:roles (
+            id,
+            code,
+            name
+          )
+        )
+      `
+      )
+      .eq('email', email)
+      .single();
+
+    if (error || !user) {
+      return apiFailure('Invalid email or password', 401);
     }
 
-    message.success('Login successful');
+    const roleCodes = (user.user_roles ?? [])
+      .map((ur) => ur.role?.code)
+      .filter((code): code is string => Boolean(code)) as UserRoleCode[];
 
-    router.push('/dashboard');
-  } catch {
-    message.error('Login failed');
+    // TODO: the old "PRE_REGISTERED_MENTOR" role no longer exists in the new
+    // roles table (seed only defines ADMIN, MENTOR, MEMBER). If there is still
+    // a business rule for users who registered via a mentor request but
+    // haven't finished onboarding, it needs to be re-modeled (e.g. a dedicated
+    // status value, or checking related rows in mentor_requests). For now this
+    // specific gate has been removed; the status check below still blocks
+    // login for any non-active user, just with a generic message.
+
+    const validPassword = await comparePassword(
+      password,
+      user.password_hash
+    );
+    if (!validPassword) {
+      return apiFailure('Invalid email or password', 401);
+    }
+
+    if (user.status !== 'active') {
+      return apiFailure(
+        'Your account has not been approved yet.',
+        403
+      );
+    }
+
+    // BREAKING CHANGE: token payload now carries "roles" (string[]) instead of
+    // a single "role" string. Update lib/auth/jwt.ts (TokenPayload type) and
+    // any middleware/code reading payload.role to use payload.roles instead.
+    const token = signToken({
+      userId: user.id,
+      email: user.email,
+      roles: roleCodes,
+    });
+
+    const cookieStore = await cookies();
+    cookieStore.set('access_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return apiSuccess({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        roles: roleCodes,
+      },
+    });
+  } catch (error) {
+    return apiFailure(
+      error instanceof Error ? error.message : 'Unexpected error',
+      500
+    );
   }
-};
-
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#F5F7FA',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 24,
-      }}
-    >
-      <Card
-        style={{
-          width: 420,
-          borderRadius: 16,
-        }}
-      >
-        <Flex vertical align="center" gap={8}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 16,
-              background: '#1677ff',
-              color: '#fff',
-              fontSize: 28,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            ✝
-          </div>
-
-          <Title level={3} style={{ margin: 0 }}>
-            Bible Discipleship
-          </Title>
-
-          <Text type="secondary">
-            Sign in to your account
-          </Text>
-        </Flex>
-
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-          style={{ marginTop: 32 }}
-        >
-          <Form.Item
-            label="Email"
-            name="email"
-            rules={[
-              { required: true },
-              { type: 'email' },
-            ]}
-          >
-            <Input
-              prefix={<MailOutlined />}
-              placeholder="your@email.com"
-            />
-          </Form.Item>
-
-          <Form.Item
-            label="Password"
-            name="password"
-            rules={[{ required: true }]}
-          >
-            <Input.Password
-              prefix={<LockOutlined />}
-              placeholder="••••••••"
-            />
-          </Form.Item>
-
-          <Flex justify="space-between">
-            <Checkbox>Remember me</Checkbox>
-
-            <Link href="/forgot-password">
-              Forgot password?
-            </Link>
-          </Flex>
-
-          <Button
-            htmlType="submit"
-            type="primary"
-            block
-            size="large"
-            style={{ marginTop: 24 }}
-          >
-            Login
-          </Button>
-
-          <div
-            style={{
-              textAlign: 'center',
-              marginTop: 24,
-            }}
-          >
-            <Text type="secondary">
-              Don't have account?
-            </Text>
-
-            <Link href="/register">
-              {' '}Register
-            </Link>
-          </div>
-        </Form>
-      </Card>
-    </div>
-  );
 }
