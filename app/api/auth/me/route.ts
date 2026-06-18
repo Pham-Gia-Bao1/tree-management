@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/jwt';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import type { AuthUser, UserRoleCode } from '@/types/auth.types';
 
 export async function GET() {
   try {
@@ -43,17 +44,19 @@ export async function GET() {
       return apiFailure('Unauthorized', 401);
     }
 
-    const roleCodes = (user.user_roles ?? [])
-      .map((ur: { role: { code: string } | null }) => ur.role?.code)
-      .filter((code): code is string => Boolean(code));
+    const roleCodes: UserRoleCode[] = (user.user_roles ?? [])
+      .map((ur: { role: { code: UserRoleCode } | null }) => ur.role?.code)
+      .filter((code): code is UserRoleCode => Boolean(code));
 
-    return apiSuccess({
+    const response: AuthUser = {
       id: user.id,
       email: user.email,
       fullName: user.full_name,
       roles: roleCodes,
       branchId: user.branch_id,
-    });
+    };
+
+    return apiSuccess(response);
   } catch {
     return apiFailure('Unauthorized', 401);
   }
