@@ -36,19 +36,19 @@ interface RelationFormValues {
     status?: 'in_progress' | 'completed';
 }
 
-/** Chuyển Dayjs → ISO date string "YYYY-MM-DD" để gửi lên API */
+/** Dayjs → "YYYY-MM-DD" */
 function toDateString(d: Dayjs): string {
     return d.format('YYYY-MM-DD');
 }
 
-/** Chuyển date string từ API → Dayjs để hiển thị trên DatePicker */
+/** API string → Dayjs (for DatePicker pre-fill) */
 function toDayjs(value: string | null | undefined): Dayjs | undefined {
     if (!value) return undefined;
     const d = dayjs(value);
     return d.isValid() ? d : undefined;
 }
 
-/** Format ngày hiển thị trong table */
+/** Display date in table: "DD/MM/YYYY" */
 function formatDate(value: string | null | undefined): string {
     if (!value) return '-';
     const d = dayjs(value);
@@ -65,34 +65,43 @@ export default function TrainingRelations() {
     const [courses, setCourses] = useState<CourseRecord[]>([]);
     const [users, setUsers] = useState<UserRecord[]>([]);
     const [form] = Form.useForm<RelationFormValues>();
+    const [loading, setLoading] = useState(false);
 
     // ── Load initial data ──────────────────────────────────────────────────────
     useEffect(() => {
-        void (async () => {
-            try {
-                const [relationsRes, coursesRes, usersRes] = await Promise.all([
-                    fetch('/api/training-relations'),
-                    fetch('/api/courses'),
-                    fetch('/api/users'),
-                ]);
-                const [relationsPayload, coursesPayload, usersPayload] = await Promise.all([
-                    relationsRes.json(),
-                    coursesRes.json(),
-                    usersRes.json(),
-                ]);
-                setData(
-                    (relationsPayload.data ?? []).map((r: TrainingRelationRecord) => ({
-                        ...r,
-                        key: r.id,
-                    })),
-                );
-                setCourses(coursesPayload.data ?? []);
-                setUsers(usersPayload.data ?? []);
-            } catch {
-                message.error('Failed to load training relations');
-            }
-        })();
-    }, [message]);
+    void fetchData();
+}, []);
+    const fetchData = async () => {
+    try {
+        setLoading(true);
+
+        const [relationsRes, coursesRes, usersRes] = await Promise.all([
+            fetch('/api/training-relations'),
+            fetch('/api/courses'),
+            fetch('/api/users'),
+        ]);
+
+        const [relationsPayload, coursesPayload, usersPayload] = await Promise.all([
+            relationsRes.json(),
+            coursesRes.json(),
+            usersRes.json(),
+        ]);
+
+        setData(
+            (relationsPayload.data ?? []).map((r: TrainingRelationRecord) => ({
+                ...r,
+                key: r.id,
+            })),
+        );
+
+        setCourses(coursesPayload.data ?? []);
+        setUsers(usersPayload.data ?? []);
+    } catch {
+        message.error('Failed to load training relations');
+    } finally {
+        setLoading(false);
+    }
+};
 
     // ── Select / Status options ────────────────────────────────────────────────
     const mentorOptions = useMemo(
@@ -112,7 +121,7 @@ export default function TrainingRelations() {
         { value: 'completed', label: 'Completed' },
     ];
 
-    // ── Client-side search filter ──────────────────────────────────────────────
+    // ── Client-side search ─────────────────────────────────────────────────────
     const filteredData = useMemo(() => {
         if (!search) return data;
         const kw = search.toLowerCase();
@@ -137,9 +146,8 @@ export default function TrainingRelations() {
             courseId: record.courseId,
             mentorId: record.mentorId,
             discipleId: record.discipleId,
-            // API hiện lưu startMonth / endMonth dạng string — parse sang Dayjs
-            startDate: toDayjs(record.startMonth),
-            endDate: toDayjs(record.endMonth),
+            startDate: toDayjs(record.startDate),
+            endDate: toDayjs(record.endDate),
             status: record.status ?? 'in_progress',
             notes: record.notes ?? undefined,
         });
@@ -165,14 +173,12 @@ export default function TrainingRelations() {
                 endDate: values.endDate ? toDateString(values.endDate) : null,
                 status: values.status ?? 'in_progress',
                 notes: values.notes || null,
-                createdBy: '00000000-0000-0000-0000-000000000101', // thay bằng auth user thực tế nếu có
+                createdBy: null, // replace with auth user when available
             }),
         });
 
         const result = await response.json();
-        if (!response.ok) {
-            throw new Error(result?.message ?? 'Failed to create relation');
-        }
+        if (!response.ok) throw new Error(result?.message ?? 'Failed to create relation');
 
         const created: TrainingRelationRecord = result.data;
         setData((prev) => [{ ...created, key: created.id }, ...prev]);
@@ -182,7 +188,7 @@ export default function TrainingRelations() {
     // ── Edit ──────────────────────────────────────────────────────────────────
     const handleEdit = async (values: RelationFormValues, record: RelationRow) => {
         const response = await fetch(`/api/training-relations/${record.id}`, {
-            method: 'PUT',
+            method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 courseId: values.courseId,
@@ -196,12 +202,10 @@ export default function TrainingRelations() {
         });
 
         if (!response.ok) {
-            // Fallback: cập nhật local khi BE chưa có PUT endpoint
+            // Fallback: optimistic local update until PUT endpoint is ready on BE
             const courseName = courseOptions.find((o) => o.value === values.courseId)?.label;
             const mentorName = mentorOptions.find((o) => o.value === values.mentorId)?.label;
             const discipleName = discipleOptions.find((o) => o.value === values.discipleId)?.label;
-            const startDateStr = toDateString(values.startDate);
-            const endDateStr = values.endDate ? toDateString(values.endDate) : null;
 
             setData((prev) =>
                 prev.map((item) =>
@@ -214,8 +218,8 @@ export default function TrainingRelations() {
                               mentorName,
                               discipleId: values.discipleId,
                               discipleName,
-                              startMonth: startDateStr,
-                              endMonth: endDateStr,
+                              startDate: toDateString(values.startDate),
+                              endDate: values.endDate ? toDateString(values.endDate) : null,
                               status: values.status ?? item.status,
                               notes: values.notes || null,
                           }
@@ -248,9 +252,7 @@ export default function TrainingRelations() {
             }
             closeDrawer();
         } catch (error) {
-            if (error instanceof Error) {
-                message.error(error.message);
-            }
+            if (error instanceof Error) message.error(error.message);
         } finally {
             setSaving(false);
         }
@@ -259,11 +261,15 @@ export default function TrainingRelations() {
     // ── Delete ─────────────────────────────────────────────────────────────────
     const handleDelete = async (id: string) => {
         try {
-            // TODO: gọi DELETE /api/training-relations/[id] khi BE sẵn sàng
+            const response = await fetch(`/api/training-relations/${id}`, { method: 'DELETE' });
+            if (!response.ok) {
+                const result = await response.json();
+                throw new Error(result?.message ?? 'Failed to delete relation');
+            }
             setData((prev) => prev.filter((item) => item.id !== id));
             message.success('Relation deleted');
-        } catch {
-            message.error('Failed to delete relation');
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : 'Failed to delete relation');
         }
     };
 
@@ -301,12 +307,12 @@ export default function TrainingRelations() {
         },
         {
             title: 'Start Date',
-            dataIndex: 'startMonth',
+            dataIndex: 'startDate',
             render: (value: string | null) => formatDate(value),
         },
         {
             title: 'End Date',
-            dataIndex: 'endMonth',
+            dataIndex: 'endDate',
             render: (value: string | null) => formatDate(value),
         },
         {
@@ -380,7 +386,9 @@ export default function TrainingRelations() {
                             style={{ width: 280 }}
                             onChange={(e) => setSearch(e.target.value)}
                         />
-                        <Button onClick={() => message.success('Refreshed')}>Refresh</Button>
+                      <Button onClick={() => void fetchData()} loading={loading}>
+    Refresh
+</Button>
                     </Space>
                     <Space wrap>
                         <Select
@@ -402,6 +410,7 @@ export default function TrainingRelations() {
             <Card styles={{ body: { padding: 0 } }}>
                 <Table<RelationRow>
                     rowKey="id"
+                    loading={loading}
                     columns={columns}
                     dataSource={filteredData}
                     pagination={{
