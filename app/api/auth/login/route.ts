@@ -5,7 +5,7 @@ import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { comparePassword } from '@/lib/auth/password';
 import { signToken } from '@/lib/auth/jwt';
-import type { UserRoleCode } from '@/types/auth';
+import type { UserRoleCode } from '@/types/auth.types';
 
 export async function POST(request: NextRequest) {
   try {
