@@ -1,4 +1,6 @@
-// ── Record returned by the API (camelCase) ─────────────────────────────────────
+// types/training-link.types.ts
+
+// ── Record returned by the API ────────────────────────────────────────────────
 export interface TrainingRelationRecord {
     id: string;
     courseId: string;
@@ -15,9 +17,13 @@ export interface TrainingRelationRecord {
     status: 'in_progress' | 'completed';
     notes: string | null;
     createdBy: string | null;
+    /** ISO timestamp — set by DB default */
+    createdAt: string;
+    /** ISO timestamp — updated automatically by trigger on every PATCH */
+    updatedAt: string;
 }
 
-// ── Input accepted by POST / PUT endpoints ─────────────────────────────────────
+// ── Input accepted by POST / PATCH endpoints ──────────────────────────────────
 export interface TrainingRelationInput {
     courseId: string;
     mentorId: string;
@@ -29,4 +35,5 @@ export interface TrainingRelationInput {
     status?: 'in_progress' | 'completed';
     notes?: string | null;
     createdBy?: string | null;
+    // createdAt / updatedAt are never sent by the client — managed by DB
 }
