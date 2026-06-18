@@ -1,55 +1,64 @@
-// training-relations/[id]/route.ts
+// app/api/training-relations/[id]/route.ts
 import { NextRequest } from 'next/server';
 
-import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
-import { optionalString, readJsonBody, requireString } from '@/lib/api/validation';
+import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import type { TrainingRelationInput, TrainingRelationRecord } from '@/types/training-link.types';
+import { optionalString, readJsonBody, requireString } from '@/lib/api/validation';
 import { Database } from '@/types/database.types';
+
+import type {
+    TrainingRelationInput,
+    TrainingRelationRecord,
+} from '@/types/training-link.types';
 
 type TrainingLinkUpdate = Database['public']['Tables']['training_links']['Update'];
 
-// DB row type — columns are still start_month / end_month in Supabase
-type TrainingLinkRow = {
+type RelationRow = {
     id: string;
     course_id: string;
     mentor_id: string;
     disciple_id: string;
-    start_date: string;       // renamed from start_month
-    end_date: string | null;  // renamed from end_month
+    start_date: string;
+    end_date: string | null;
     status: 'in_progress' | 'completed';
     notes: string | null;
     created_by: string | null;
+    created_at: string;
+    updated_at: string;
+};
+
+type References = {
+    courseNames: Map<string, string>;
+    userNames: Map<string, string>;
+    branchNames: Map<string, string>;
+    branchByUserId: Map<string, string | null>;
 };
 
 function mapRelation(
-    row: TrainingLinkRow,
-    refs: {
-        courseNames: Map<string, string>;
-        mentorNames: Map<string, string>;
-        discipleNames: Map<string, string>;
-        branchNames: Map<string, string>;
-        branchByUserId: Map<string, string | null>;
-    },
+    row: RelationRow,
+    refs: References,
 ): TrainingRelationRecord {
+    const mentorBranchId = refs.branchByUserId.get(row.mentor_id);
+
     return {
         id: row.id,
         courseId: row.course_id,
-        courseName: refs.courseNames.get(row.course_id) ?? undefined,
+        courseName: refs.courseNames.get(row.course_id),
         mentorId: row.mentor_id,
-        mentorName: refs.mentorNames.get(row.mentor_id) ?? undefined,
+        mentorName: refs.userNames.get(row.mentor_id),
         discipleId: row.disciple_id,
-        discipleName: refs.discipleNames.get(row.disciple_id) ?? undefined,
-        branchName: (() => {
-            const mentorBranchId = refs.branchByUserId.get(row.mentor_id) ?? null;
-            return mentorBranchId ? refs.branchNames.get(mentorBranchId) ?? undefined : undefined;
-        })(),
+        discipleName: refs.userNames.get(row.disciple_id),
+        branchName: mentorBranchId
+            ? refs.branchNames.get(mentorBranchId)
+            : undefined,
         startDate: row.start_date,
         endDate: row.end_date,
         status: row.status,
         notes: row.notes,
         createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
     };
 }
 
@@ -57,11 +66,17 @@ function handleError(error: unknown) {
     if (error instanceof ApiError) {
         return apiFailure(error.message, error.status, error.details);
     }
-    const message = error instanceof Error ? error.message : 'Unexpected error.';
-    return apiFailure(message, 500, error);
+
+    return apiFailure(
+        error instanceof Error ? error.message : 'Unexpected error.',
+        500,
+        error,
+    );
 }
 
-async function loadReferences(admin: ReturnType<typeof getSupabaseAdminClient>) {
+async function loadReferences(
+    admin: ReturnType<typeof getSupabaseAdminClient>,
+): Promise<References> {
     const [usersResult, branchesResult, coursesResult] = await Promise.all([
         admin.from('users').select('id, full_name, branch_id'),
         admin.from('branches').select('id, name'),
@@ -72,19 +87,19 @@ async function loadReferences(admin: ReturnType<typeof getSupabaseAdminClient>) 
     if (branchesResult.error) throw branchesResult.error;
     if (coursesResult.error) throw coursesResult.error;
 
-    const branchNames = new Map(
-        (branchesResult.data ?? []).map((branch) => [branch.id, branch.name]),
-    );
-    const branchByUserId = new Map(
-        (usersResult.data ?? []).map((user) => [user.id, user.branch_id]),
-    );
-
     return {
-        courseNames: new Map((coursesResult.data ?? []).map((course) => [course.id, course.name])),
-        mentorNames: new Map((usersResult.data ?? []).map((user) => [user.id, user.full_name])),
-        discipleNames: new Map((usersResult.data ?? []).map((user) => [user.id, user.full_name])),
-        branchNames,
-        branchByUserId,
+        courseNames: new Map(
+            (coursesResult.data ?? []).map((item) => [item.id, item.name]),
+        ),
+        userNames: new Map(
+            (usersResult.data ?? []).map((item) => [item.id, item.full_name]),
+        ),
+        branchNames: new Map(
+            (branchesResult.data ?? []).map((item) => [item.id, item.name]),
+        ),
+        branchByUserId: new Map(
+            (usersResult.data ?? []).map((item) => [item.id, item.branch_id]),
+        ),
     };
 }
 
@@ -97,13 +112,17 @@ export async function GET(
         const admin = getSupabaseAdminClient();
 
         const [{ data, error }, refs] = await Promise.all([
-            admin.from('training_links').select('*').eq('id', requireString(id, 'id')).single(),
+            admin
+                .from('training_links')
+                .select('*')
+                .eq('id', requireString(id, 'id'))
+                .single(),
             loadReferences(admin),
         ]);
 
         if (error) throw error;
 
-        return apiSuccess(mapRelation(data as unknown as TrainingLinkRow, refs));
+        return apiSuccess(mapRelation(data as unknown as RelationRow, refs));
     } catch (error) {
         return handleError(error);
     }
@@ -116,6 +135,7 @@ export async function PATCH(
     try {
         const { id } = await context.params;
         const admin = getSupabaseAdminClient();
+
         const body = await readJsonBody<Partial<TrainingRelationInput>>(request);
 
         const payload: Record<string, unknown> = {};
@@ -136,6 +156,7 @@ export async function PATCH(
         if (notes !== undefined) payload.notes = notes;
         if (body.status !== undefined) payload.status = body.status;
         if (body.createdBy !== undefined) payload.created_by = body.createdBy;
+        // updated_at is handled automatically by the training_links_updated_at trigger
 
         if (Object.keys(payload).length === 0) {
             throw new ApiError('No update fields were provided.', 400);
@@ -151,7 +172,8 @@ export async function PATCH(
         if (error) throw error;
 
         const refs = await loadReferences(admin);
-        return apiSuccess(mapRelation(data as unknown as TrainingLinkRow, refs));
+
+        return apiSuccess(mapRelation(data as unknown as RelationRow, refs));
     } catch (error) {
         return handleError(error);
     }
