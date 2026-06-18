@@ -98,53 +98,58 @@ export default function TrainingRelations() {
     };
 
     const handleSave = async () => {
-        try {
-            const values = await form.validateFields();
-            const mentorName = users.find((user) => user.id === values.mentorId)?.name ?? '';
-            const discipleName = users.find((user) => user.id === values.discipleId)?.name ?? '';
-            const courseName = courses.find((course) => course.id === values.courseId)?.name ?? '';
-            const branchName = users.find((user) => user.id === values.mentorId)?.branchName ?? undefined;
+    try {
+        const values = await form.validateFields();
 
-            if (editingRecord) {
-                setData((prev) => prev.map((item) => item.id === editingRecord.id ? {
-                    ...item,
-                    courseId: values.courseId,
-                    courseName,
-                    mentorId: values.mentorId,
-                    mentorName,
-                    discipleId: values.discipleId,
-                    discipleName,
-                    branchName,
-                    startMonth: values.startMonth,
-                    endMonth: values.endMonth ?? null,
-                    notes: values.notes ?? null,
-                } : item));
-                message.success('Relation updated');
-            } else {
-                const id = String(Date.now());
-                setData((prev) => [{
-                    id,
-                    key: id,
-                    courseId: values.courseId,
-                    courseName,
-                    mentorId: values.mentorId,
-                    mentorName,
-                    discipleId: values.discipleId,
-                    discipleName,
-                    branchName,
-                    startMonth: values.startMonth,
-                    endMonth: values.endMonth ?? null,
-                    status: 'in_progress',
-                    notes: values.notes ?? null,
-                    createdBy: 'Admin',
-                }, ...prev]);
-                message.success('Relation created');
-            }
-            setModalOpen(false);
-        } catch {
+        if (editingRecord) {
+            // TODO: call PUT API sau này
+            message.info('Update API not implemented yet');
             return;
         }
-    };
+
+        const response = await fetch('/api/training-relations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                courseId: values.courseId,
+                mentorId: values.mentorId,
+                discipleId: values.discipleId,
+                startMonth: values.startMonth,
+                endMonth: values.endMonth || null,
+                notes: values.notes || null,
+                createdBy: 'Admin',
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result?.message || 'Failed to create relation');
+        }
+
+        const relation = result.data;
+
+        setData((prev) => [
+            {
+                ...relation,
+                key: relation.id,
+            },
+            ...prev,
+        ]);
+
+        message.success('Relation created');
+        setModalOpen(false);
+        form.resetFields();
+    } catch (error) {
+        message.error(
+            error instanceof Error
+                ? error.message
+                : 'Failed to create relation'
+        );
+    }
+};
 
     const columns = [
        {
