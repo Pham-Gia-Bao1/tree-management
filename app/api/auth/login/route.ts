@@ -5,7 +5,7 @@ import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { comparePassword } from '@/lib/auth/password';
 import { signToken } from '@/lib/auth/jwt';
-import type { UserRoleCode } from '@/types/auth.types';
+import type { UserRoleCode } from '@/types/auth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,9 +39,9 @@ export async function POST(request: NextRequest) {
       return apiFailure('Invalid email or password', 401);
     }
 
-    const roleCodes: UserRoleCode[] = (user.user_roles ?? [])
-      .map((ur: { role: { code: UserRoleCode } | null }) => ur.role?.code)
-      .filter((code): code is UserRoleCode => Boolean(code));
+    const roleCodes = (user.user_roles ?? [])
+      .map((ur) => ur.role?.code)
+      .filter((code): code is string => Boolean(code)) as UserRoleCode[];
 
     // TODO: the old "PRE_REGISTERED_MENTOR" role no longer exists in the new
     // roles table (seed only defines ADMIN, MENTOR, MEMBER). If there is still
