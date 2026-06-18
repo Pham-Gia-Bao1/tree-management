@@ -1,27 +1,33 @@
-// app/api/auth/login/route.ts
-import { NextRequest } from 'next/server';
+// app/api/auth/me/route.ts
 import { cookies } from 'next/headers';
+import { verifyToken } from '@/lib/auth/jwt';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import { comparePassword } from '@/lib/auth/password';
-import { signToken } from '@/lib/auth/jwt';
+import type { AuthUser, UserRoleCode } from '@/types/auth';
 
-export async function POST(request: NextRequest) {
+export async function GET() {
   try {
-    const body = await request.json();
-    const email = body.email;
-    const password = body.password;
+    const cookieStore = await cookies();
+    const token = cookieStore.get('access_token')?.value;
 
+    if (!token) {
+      return apiFailure('Unauthorized', 401);
+    }
+
+    const payload = verifyToken(token);
     const admin = getSupabaseAdminClient();
 
-    // NOTE: "users" no longer has a "role" column. Roles now come from the
-    // user_roles -> roles relation (RBAC). We embed that relation so we can
-    // read the role codes (e.g. 'ADMIN', 'MENTOR', 'MEMBER') for this user.
-    const { data: user, error } = await admin
+    // NOTE: "role" is no longer a column on users. Roles now come through the
+    // user_roles -> roles relation, embedded here as role codes/names.
+    const { data: user } = await admin
       .from('users')
       .select(
         `
-        *,
+        id,
+        email,
+        full_name,
+        status,
+        branch_id,
         user_roles (
           role:roles (
             id,
@@ -31,71 +37,27 @@ export async function POST(request: NextRequest) {
         )
       `
       )
-      .eq('email', email)
+      .eq('id', payload.userId)
       .single();
 
-    if (error || !user) {
-      return apiFailure('Invalid email or password', 401);
+    if (!user) {
+      return apiFailure('Unauthorized', 401);
     }
 
-    const roleCodes = (user.user_roles ?? [])
-      .map((ur: { role: { code: string } | null }) => ur.role?.code)
-      .filter((code): code is string => Boolean(code));
+    const roleCodes: UserRoleCode[] = (user.user_roles ?? [])
+      .map((ur: { role: { code: UserRoleCode } | null }) => ur.role?.code)
+      .filter((code): code is UserRoleCode => Boolean(code));
 
-    // TODO: the old "PRE_REGISTERED_MENTOR" role no longer exists in the new
-    // roles table (seed only defines ADMIN, MENTOR, MEMBER). If there is still
-    // a business rule for users who registered via a mentor request but
-    // haven't finished onboarding, it needs to be re-modeled (e.g. a dedicated
-    // status value, or checking related rows in mentor_requests). For now this
-    // specific gate has been removed; the status check below still blocks
-    // login for any non-active user, just with a generic message.
-
-    const validPassword = await comparePassword(
-      password,
-      user.password_hash
-    );
-    if (!validPassword) {
-      return apiFailure('Invalid email or password', 401);
-    }
-
-    if (user.status !== 'active') {
-      return apiFailure(
-        'Your account has not been approved yet.',
-        403
-      );
-    }
-
-    // BREAKING CHANGE: token payload now carries "roles" (string[]) instead of
-    // a single "role" string. Update lib/auth/jwt.ts (TokenPayload type) and
-    // any middleware/code reading payload.role to use payload.roles instead.
-    const token = signToken({
-      userId: user.id,
+    const response: AuthUser = {
+      id: user.id,
       email: user.email,
+      fullName: user.full_name,
       roles: roleCodes,
-    });
+      branchId: user.branch_id,
+    };
 
-    const cookieStore = await cookies();
-    cookieStore.set('access_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
-    });
-
-    return apiSuccess({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.full_name,
-        roles: roleCodes,
-      },
-    });
-  } catch (error) {
-    return apiFailure(
-      error instanceof Error ? error.message : 'Unexpected error',
-      500
-    );
+    return apiSuccess(response);
+  } catch {
+    return apiFailure('Unauthorized', 401);
   }
 }
