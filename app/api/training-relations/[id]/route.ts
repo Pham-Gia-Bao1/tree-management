@@ -10,23 +10,29 @@ import { Database } from '@/types/database.types';
 
 type TrainingLinkUpdate = Database['public']['Tables']['training_links']['Update'];
 
-function mapRelation(row: {
+// DB row type — columns are still start_month / end_month in Supabase
+type TrainingLinkRow = {
     id: string;
     course_id: string;
     mentor_id: string;
     disciple_id: string;
-    start_month: string;
-    end_month: string | null;
+    start_date: string;       // renamed from start_month
+    end_date: string | null;  // renamed from end_month
     status: 'in_progress' | 'completed';
     notes: string | null;
     created_by: string | null;
-}, refs: {
-    courseNames: Map<string, string>;
-    mentorNames: Map<string, string>;
-    discipleNames: Map<string, string>;
-    branchNames: Map<string, string>;
-    branchByUserId: Map<string, string | null>;
-}): TrainingRelationRecord {
+};
+
+function mapRelation(
+    row: TrainingLinkRow,
+    refs: {
+        courseNames: Map<string, string>;
+        mentorNames: Map<string, string>;
+        discipleNames: Map<string, string>;
+        branchNames: Map<string, string>;
+        branchByUserId: Map<string, string | null>;
+    },
+): TrainingRelationRecord {
     return {
         id: row.id,
         courseId: row.course_id,
@@ -39,9 +45,8 @@ function mapRelation(row: {
             const mentorBranchId = refs.branchByUserId.get(row.mentor_id) ?? null;
             return mentorBranchId ? refs.branchNames.get(mentorBranchId) ?? undefined : undefined;
         })(),
-        // Expose as startDate / endDate — DB columns remain start_month / end_month
-        startDate: row.start_month,
-        endDate: row.end_month,
+        startDate: row.start_date,
+        endDate: row.end_date,
         status: row.status,
         notes: row.notes,
         createdBy: row.created_by,
@@ -52,7 +57,6 @@ function handleError(error: unknown) {
     if (error instanceof ApiError) {
         return apiFailure(error.message, error.status, error.details);
     }
-
     const message = error instanceof Error ? error.message : 'Unexpected error.';
     return apiFailure(message, 500, error);
 }
@@ -99,7 +103,7 @@ export async function GET(
 
         if (error) throw error;
 
-        return apiSuccess(mapRelation(data, refs));
+        return apiSuccess(mapRelation(data as unknown as TrainingLinkRow, refs));
     } catch (error) {
         return handleError(error);
     }
@@ -122,15 +126,13 @@ export async function PATCH(
             payload.mentor_id = requireString(body.mentorId, 'mentorId');
         if (body.discipleId !== undefined)
             payload.disciple_id = requireString(body.discipleId, 'discipleId');
-
-        // Accept startDate / endDate from client; map to DB columns start_month / end_month
         if (body.startDate !== undefined)
-            payload.start_month = requireString(body.startDate, 'startDate');
+            payload.start_date = requireString(body.startDate, 'startDate');
 
         const endDate = optionalString(body.endDate);
         const notes = optionalString(body.notes);
 
-        if (endDate !== undefined) payload.end_month = endDate;
+        if (endDate !== undefined) payload.end_date = endDate;
         if (notes !== undefined) payload.notes = notes;
         if (body.status !== undefined) payload.status = body.status;
         if (body.createdBy !== undefined) payload.created_by = body.createdBy;
@@ -149,7 +151,7 @@ export async function PATCH(
         if (error) throw error;
 
         const refs = await loadReferences(admin);
-        return apiSuccess(mapRelation(data, refs));
+        return apiSuccess(mapRelation(data as unknown as TrainingLinkRow, refs));
     } catch (error) {
         return handleError(error);
     }
