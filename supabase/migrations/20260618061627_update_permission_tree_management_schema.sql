@@ -1,124 +1,49 @@
-create extension if not exists pgcrypto;
-
-drop table if exists public.audit_logs cascade;
-drop table if exists public.user_course_progress cascade;
-drop table if exists public.notifications cascade;
-drop table if exists public.messages cascade;
-drop table if exists public.conversations cascade;
-drop table if exists public.mentor_requests cascade;
-drop table if exists public.training_links cascade;
-drop table if exists public.role_permissions cascade;
-drop table if exists public.user_roles cascade;
-drop table if exists public.permissions cascade;
-drop table if exists public.permission_groups cascade;
-drop table if exists public.roles cascade;
-drop table if exists public.courses cascade;
-drop table if exists public.users cascade;
-drop table if exists public.branches cascade;
-
-drop type if exists public.user_course_progress_status cascade;
-drop type if exists public.mentor_request_status cascade;
-drop type if exists public.training_link_status cascade;
-drop type if exists public.user_status cascade;
-
-create type public.user_status as enum (
-'active',
-'inactive',
-'pending'
-);
-
-create type public.training_link_status as enum (
-'in_progress',
-'completed'
-);
-
-create type public.mentor_request_status as enum (
-'pending',
-'approved',
-'rejected'
-);
-
-create type public.user_course_progress_status as enum (
-'not_started',
-'in_progress',
-'completed'
-);
-
-create table public.branches (
-id uuid primary key default gen_random_uuid(),
-code varchar(50) not null unique,
-name varchar(255) not null unique,
-city varchar(255) not null,
-is_active boolean not null default true,
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now()
-);
-
-create table public.roles (
-id uuid primary key default gen_random_uuid(),
-code varchar(100) not null unique,
-name varchar(255) not null,
-description text,
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now()
-);
-
-create table public.permission_groups (
-id uuid primary key default gen_random_uuid(),
-code varchar(100) not null unique,
-name varchar(255) not null,
-created_at timestamptz not null default now()
-);
-
-create table public.permissions (
+create table public.conversations (
 id uuid primary key default gen_random_uuid(),
 
 
-permission_group_id uuid
-    references public.permission_groups(id)
+user_a_id uuid not null
+    references public.users(id)
     on update cascade
-    on delete set null,
+    on delete cascade,
 
-code varchar(150) not null unique,
-name varchar(255) not null,
-description text,
-module varchar(100) not null,
+user_b_id uuid not null
+    references public.users(id)
+    on update cascade
+    on delete cascade,
+
+created_at timestamptz not null default now(),
+
+constraint conversations_different_users
+    check (user_a_id <> user_b_id)
+
+
+);
+
+create table public.messages (
+id uuid primary key default gen_random_uuid(),
+
+
+conversation_id uuid not null
+    references public.conversations(id)
+    on update cascade
+    on delete cascade,
+
+sender_id uuid not null
+    references public.users(id)
+    on update cascade
+    on delete cascade,
+
+content text not null,
+
+is_read boolean not null default false,
 
 created_at timestamptz not null default now()
 
 
 );
 
-create table public.users (
-id uuid primary key default gen_random_uuid(),
-
-
-email varchar(255) not null unique,
-password_hash text not null,
-
-full_name varchar(255) not null,
-birth_date date,
-
-avatar_url text,
-phone varchar(50),
-
-branch_id uuid
-    references public.branches(id)
-    on update cascade
-    on delete set null,
-
-status public.user_status not null default 'pending',
-
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now()
-
-
-);
-
-create index users_branch_id_idx
-on public.users(branch_id);
-
-create table public.user_roles (
+create table public.notifications (
 id uuid primary key default gen_random_uuid(),
 
 
@@ -127,201 +52,118 @@ user_id uuid not null
     on update cascade
     on delete cascade,
 
-role_id uuid not null
-    references public.roles(id)
-    on update cascade
-    on delete cascade,
+title varchar(255) not null,
+content text,
 
-created_at timestamptz not null default now(),
+is_read boolean not null default false,
 
-constraint user_roles_unique
-    unique(user_id, role_id)
+created_at timestamptz not null default now()
 
 
 );
 
-create index user_roles_user_id_idx
-on public.user_roles(user_id);
-
-create index user_roles_role_id_idx
-on public.user_roles(role_id);
-
-create table public.role_permissions (
+create table public.audit_logs (
 id uuid primary key default gen_random_uuid(),
 
 
-role_id uuid not null
-    references public.roles(id)
-    on update cascade
-    on delete cascade,
-
-permission_id uuid not null
-    references public.permissions(id)
-    on update cascade
-    on delete cascade,
-
-created_at timestamptz not null default now(),
-
-constraint role_permissions_unique
-    unique(role_id, permission_id)
-
-
-);
-
-create index role_permissions_role_id_idx
-on public.role_permissions(role_id);
-
-create index role_permissions_permission_id_idx
-on public.role_permissions(permission_id);
-
-create table public.courses (
-id uuid primary key default gen_random_uuid(),
-
-
-code varchar(50) not null unique,
-name varchar(255) not null,
-
-description text,
-
-order_no integer not null default 0
-    check (order_no >= 0),
-
-is_active boolean not null default true,
-
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now()
-
-
-);
-
-create table public.training_links (
-id uuid primary key default gen_random_uuid(),
-
-
-course_id uuid not null
-    references public.courses(id)
-    on update cascade
-    on delete restrict,
-
-mentor_id uuid not null
-    references public.users(id)
-    on update cascade
-    on delete restrict,
-
-disciple_id uuid not null
-    references public.users(id)
-    on update cascade
-    on delete restrict,
-
-start_date date not null,
-end_date date,
-
-status public.training_link_status
-    not null
-    default 'in_progress',
-
-notes text,
-
-created_by uuid
+actor_id uuid
     references public.users(id)
     on update cascade
     on delete set null,
 
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now(),
+entity_type varchar(100) not null,
+entity_id uuid not null,
 
-constraint training_links_different_people
-    check (mentor_id <> disciple_id),
+action varchar(100) not null,
 
-constraint training_links_period_check
-    check (
-        end_date is null
-        or end_date >= start_date
-    )
+old_data jsonb,
+new_data jsonb,
+
+created_at timestamptz not null default now()
 
 
 );
 
-create unique index training_link_active_unique
-on public.training_links (
-course_id,
-mentor_id,
-disciple_id
-)
-where status = 'in_progress';
+create index mentor_requests_requester_idx
+on public.mentor_requests(requester_id);
 
-create index training_links_course_id_idx
-on public.training_links(course_id);
+create index mentor_requests_mentor_idx
+on public.mentor_requests(mentor_id);
 
-create index training_links_mentor_id_idx
-on public.training_links(mentor_id);
+create index mentor_requests_course_idx
+on public.mentor_requests(course_id);
 
-create index training_links_disciple_id_idx
-on public.training_links(disciple_id);
+create index user_course_progress_user_idx
+on public.user_course_progress(user_id);
 
-create table public.mentor_requests (
-id uuid primary key default gen_random_uuid(),
+create index user_course_progress_course_idx
+on public.user_course_progress(course_id);
 
+create index user_course_progress_mentor_idx
+on public.user_course_progress(mentor_id);
 
-requester_id uuid not null
-    references public.users(id)
-    on update cascade
-    on delete cascade,
+create index conversations_user_a_idx
+on public.conversations(user_a_id);
 
-mentor_id uuid not null
-    references public.users(id)
-    on update cascade
-    on delete cascade,
+create index conversations_user_b_idx
+on public.conversations(user_b_id);
 
-course_id uuid
-    references public.courses(id)
-    on update cascade
-    on delete set null,
+create index messages_conversation_idx
+on public.messages(conversation_id);
 
-status public.mentor_request_status
-    not null
-    default 'pending',
+create index messages_sender_idx
+on public.messages(sender_id);
 
-note text,
-approved_at timestamptz,
+create index notifications_user_idx
+on public.notifications(user_id);
 
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now()
+create index audit_logs_actor_id_idx
+on public.audit_logs(actor_id);
 
+create index audit_logs_entity_idx
+on public.audit_logs(entity_type, entity_id);
 
-);
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+new.updated_at = now();
+return new;
+end;
+$$;
 
-create table public.user_course_progress (
-id uuid primary key default gen_random_uuid(),
+create trigger branches_updated_at
+before update on public.branches
+for each row
+execute function public.set_updated_at();
 
+create trigger roles_updated_at
+before update on public.roles
+for each row
+execute function public.set_updated_at();
 
-user_id uuid not null
-    references public.users(id)
-    on update cascade
-    on delete cascade,
+create trigger users_updated_at
+before update on public.users
+for each row
+execute function public.set_updated_at();
 
-course_id uuid not null
-    references public.courses(id)
-    on update cascade
-    on delete cascade,
+create trigger courses_updated_at
+before update on public.courses
+for each row
+execute function public.set_updated_at();
 
-mentor_id uuid
-    references public.users(id)
-    on update cascade
-    on delete set null,
+create trigger training_links_updated_at
+before update on public.training_links
+for each row
+execute function public.set_updated_at();
 
-status public.user_course_progress_status
-    not null
-    default 'not_started',
+create trigger mentor_requests_updated_at
+before update on public.mentor_requests
+for each row
+execute function public.set_updated_at();
 
-start_date date,
-completed_date date,
-
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now(),
-
-constraint user_course_progress_unique
-    unique(user_id, course_id)
-
-
-);
+create trigger user_course_progress_updated_at
+before update on public.user_course_progress
+for each row
+execute function public.set_updated_at();
