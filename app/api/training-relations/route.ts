@@ -1,3 +1,4 @@
+// app/api/training-relations/route.ts
 import { NextRequest } from 'next/server';
 
 import { ApiError } from '@/lib/api/api-error';
@@ -10,6 +11,9 @@ import type {
     TrainingRelationRecord,
 } from '@/types/training-link.types';
 
+// Reflects the actual training_links table after migration:
+// columns: id, course_id, mentor_id, disciple_id, start_date, end_date,
+//          status, notes, created_by, created_at, updated_at (via trigger)
 type RelationRow = {
     id: string;
     course_id: string;
@@ -20,6 +24,8 @@ type RelationRow = {
     status: 'in_progress' | 'completed';
     notes: string | null;
     created_by: string | null;
+    created_at: string;
+    updated_at: string;
 };
 
 type References = {
@@ -51,6 +57,8 @@ function mapRelation(
         status: row.status,
         notes: row.notes,
         createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
     };
 }
 
@@ -100,10 +108,7 @@ export async function GET(request: NextRequest) {
         const admin = getSupabaseAdminClient();
 
         const url = new URL(request.url);
-
-        const search =
-            url.searchParams.get('search')?.trim().toLowerCase() ?? '';
-
+        const search = url.searchParams.get('search')?.trim().toLowerCase() ?? '';
         const mentorId = url.searchParams.get('mentorId');
         const discipleId = url.searchParams.get('discipleId');
         const courseId = url.searchParams.get('courseId');
@@ -116,47 +121,30 @@ export async function GET(request: NextRequest) {
             loadReferences(admin),
         ]);
 
-        if (relationsResult.error) {
-            throw relationsResult.error;
-        }
+        if (relationsResult.error) throw relationsResult.error;
 
-        const records = (relationsResult.data ?? []).filter((item) => {
-            if (mentorId && item.mentor_id !== mentorId) return false;
-            if (discipleId && item.disciple_id !== discipleId) return false;
-            if (courseId && item.course_id !== courseId) return false;
+        const rows = (relationsResult.data ?? []) as unknown as RelationRow[];
 
+        const filtered = rows.filter((row) => {
+            if (mentorId && row.mentor_id !== mentorId) return false;
+            if (discipleId && row.disciple_id !== discipleId) return false;
+            if (courseId && row.course_id !== courseId) return false;
             if (!search) return true;
 
-            const mentorName =
-                refs.userNames.get(item.mentor_id)?.toLowerCase() ?? '';
-
-            const discipleName =
-                refs.userNames.get(item.disciple_id)?.toLowerCase() ?? '';
-
-            const courseName =
-                refs.courseNames.get(item.course_id)?.toLowerCase() ?? '';
-
-            const branchId =
-                refs.branchByUserId.get(item.mentor_id) ?? null;
-
+            const mentorName = refs.userNames.get(row.mentor_id)?.toLowerCase() ?? '';
+            const discipleName = refs.userNames.get(row.disciple_id)?.toLowerCase() ?? '';
+            const courseName = refs.courseNames.get(row.course_id)?.toLowerCase() ?? '';
+            const branchId = refs.branchByUserId.get(row.mentor_id) ?? null;
             const branchName = branchId
                 ? refs.branchNames.get(branchId)?.toLowerCase() ?? ''
                 : '';
 
-            return [
-                mentorName,
-                discipleName,
-                courseName,
-                branchName,
-                item.created_by,
-            ]
+            return [mentorName, discipleName, courseName, branchName, row.created_by]
                 .filter(Boolean)
-                .some((value) =>
-                    String(value).toLowerCase().includes(search),
-                );
+                .some((value) => String(value).toLowerCase().includes(search));
         });
 
-        return apiSuccess(records.map((item) => mapRelation(item, refs)));
+        return apiSuccess(filtered.map((row) => mapRelation(row, refs)));
     } catch (error) {
         return handleError(error);
     }
@@ -166,33 +154,31 @@ export async function POST(request: NextRequest) {
     try {
         const admin = getSupabaseAdminClient();
 
-        const body =
-            await readJsonBody<Partial<TrainingRelationInput>>(request);
+        const body = await readJsonBody<Partial<TrainingRelationInput>>(request);
 
         const payload = {
             course_id: requireString(body.courseId, 'courseId'),
             mentor_id: requireString(body.mentorId, 'mentorId'),
             disciple_id: requireString(body.discipleId, 'discipleId'),
             start_date: requireString(body.startDate, 'startDate'),
-            end_date: optionalString(body.endDate),
+            end_date: optionalString(body.endDate) ?? null,
             status: body.status ?? 'in_progress',
-            notes: optionalString(body.notes),
+            notes: optionalString(body.notes) ?? null,
             created_by: body.createdBy ?? null,
+            // created_at / updated_at are managed by DB defaults + trigger
         };
 
         const { data, error } = await admin
             .from('training_links')
             .insert(payload)
-            .select()
+            .select('*')
             .single();
 
-        if (error) {
-            throw error;
-        }
+        if (error) throw error;
 
         const refs = await loadReferences(admin);
 
-        return apiSuccess(mapRelation(data as RelationRow, refs), 201);
+        return apiSuccess(mapRelation(data as unknown as RelationRow, refs), 201);
     } catch (error) {
         return handleError(error);
     }
