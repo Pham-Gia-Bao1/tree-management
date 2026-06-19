@@ -15,23 +15,10 @@ export async function POST(request: NextRequest) {
 
     const admin = getSupabaseAdminClient();
 
-    // NOTE: "users" no longer has a "role" column. Roles now come from the
-    // user_roles -> roles relation (RBAC). We embed that relation so we can
-    // read the role codes (e.g. 'ADMIN', 'MENTOR', 'MEMBER') for this user.
+    // users.role is the enum column from migration: 'ADMIN' | 'MEMBER' | 'PRE_REGISTERED_MENTOR'
     const { data: user, error } = await admin
       .from('users')
-      .select(
-        `
-        *,
-        user_roles (
-          role:roles (
-            id,
-            code,
-            name
-          )
-        )
-      `
-      )
+      .select('*')
       .eq('email', email)
       .single();
 
@@ -39,17 +26,13 @@ export async function POST(request: NextRequest) {
       return apiFailure('Invalid email or password', 401);
     }
 
-    const roleCodes = (user.user_roles ?? [])
-      .map((ur) => ur.role?.code)
-      .filter((code): code is string => Boolean(code)) as UserRoleCode[];
-
-    // TODO: the old "PRE_REGISTERED_MENTOR" role no longer exists in the new
-    // roles table (seed only defines ADMIN, MENTOR, MEMBER). If there is still
-    // a business rule for users who registered via a mentor request but
-    // haven't finished onboarding, it needs to be re-modeled (e.g. a dedicated
-    // status value, or checking related rows in mentor_requests). For now this
-    // specific gate has been removed; the status check below still blocks
-    // login for any non-active user, just with a generic message.
+    // PRE_REGISTERED_MENTOR accounts have no password set; block login
+    if (user.role === 'PRE_REGISTERED_MENTOR') {
+      return apiFailure(
+        'Your account has not been activated yet. Please complete registration.',
+        403
+      );
+    }
 
     const validPassword = await comparePassword(
       password,
@@ -66,13 +49,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // BREAKING CHANGE: token payload now carries "roles" (string[]) instead of
-    // a single "role" string. Update lib/auth/jwt.ts (TokenPayload type) and
-    // any middleware/code reading payload.role to use payload.roles instead.
     const token = signToken({
       userId: user.id,
       email: user.email,
-      roles: roleCodes,
+      role: user.role as UserRoleCode,
     });
 
     const cookieStore = await cookies();
@@ -90,7 +70,7 @@ export async function POST(request: NextRequest) {
         id: user.id,
         email: user.email,
         fullName: user.full_name,
-        roles: roleCodes,
+        role: user.role,
       },
     });
   } catch (error) {
