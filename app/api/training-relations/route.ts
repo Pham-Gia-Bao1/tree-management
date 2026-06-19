@@ -11,16 +11,16 @@ import type {
     TrainingRelationRecord,
 } from '@/types/training-link.types';
 
-// Reflects the actual training_links table after migration:
-// columns: id, course_id, mentor_id, disciple_id, start_date, end_date,
-//          status, notes, created_by, created_at, updated_at (via trigger)
+// Reflects the actual training_links table columns per migration:
+// id, course_id, mentor_id, disciple_id, start_month, end_month,
+// status, notes, created_by, created_at, updated_at
 type RelationRow = {
     id: string;
     course_id: string;
     mentor_id: string;
     disciple_id: string;
-    start_date: string;
-    end_date: string | null;
+    start_month: string;
+    end_month: string | null;
     status: 'in_progress' | 'completed';
     notes: string | null;
     created_by: string | null;
@@ -52,8 +52,8 @@ function mapRelation(
         branchName: mentorBranchId
             ? refs.branchNames.get(mentorBranchId)
             : undefined,
-        startDate: row.start_date,
-        endDate: row.end_date,
+        startMonth: row.start_month,
+        endMonth: row.end_month,
         status: row.status,
         notes: row.notes,
         createdBy: row.created_by,
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
             admin
                 .from('training_links')
                 .select('*')
-                .order('start_date', { ascending: false }),
+                .order('start_month', { ascending: false }),
             loadReferences(admin),
         ]);
 
@@ -160,12 +160,11 @@ export async function POST(request: NextRequest) {
             course_id: requireString(body.courseId, 'courseId'),
             mentor_id: requireString(body.mentorId, 'mentorId'),
             disciple_id: requireString(body.discipleId, 'discipleId'),
-            start_date: requireString(body.startDate, 'startDate'),
-            end_date: optionalString(body.endDate) ?? null,
+            start_month: requireString(body.startMonth, 'startMonth'),
+            end_month: optionalString(body.endMonth) ?? null,
             status: body.status ?? 'in_progress',
             notes: optionalString(body.notes) ?? null,
             created_by: body.createdBy ?? null,
-            // created_at / updated_at are managed by DB defaults + trigger
         };
 
         const { data, error } = await admin
