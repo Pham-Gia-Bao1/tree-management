@@ -5,22 +5,19 @@ import { ApiError } from '@/lib/api/api-error';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { optionalString, readJsonBody, requireString } from '@/lib/api/validation';
-import { Database } from '@/types/database.types';
 
 import type {
     TrainingRelationInput,
     TrainingRelationRecord,
 } from '@/types/training-link.types';
 
-type TrainingLinkUpdate = Database['public']['Tables']['training_links']['Update'];
-
 type RelationRow = {
     id: string;
     course_id: string;
     mentor_id: string;
     disciple_id: string;
-    start_date: string;
-    end_date: string | null;
+    start_month: string;
+    end_month: string | null;
     status: 'in_progress' | 'completed';
     notes: string | null;
     created_by: string | null;
@@ -52,8 +49,8 @@ function mapRelation(
         branchName: mentorBranchId
             ? refs.branchNames.get(mentorBranchId)
             : undefined,
-        startDate: row.start_date,
-        endDate: row.end_date,
+        startMonth: row.start_month,
+        endMonth: row.end_month,
         status: row.status,
         notes: row.notes,
         createdBy: row.created_by,
@@ -146,13 +143,13 @@ export async function PATCH(
             payload.mentor_id = requireString(body.mentorId, 'mentorId');
         if (body.discipleId !== undefined)
             payload.disciple_id = requireString(body.discipleId, 'discipleId');
-        if (body.startDate !== undefined)
-            payload.start_date = requireString(body.startDate, 'startDate');
+        if (body.startMonth !== undefined)
+            payload.start_month = requireString(body.startMonth, 'startMonth');
 
-        const endDate = optionalString(body.endDate);
+        const endMonth = optionalString(body.endMonth);
         const notes = optionalString(body.notes);
 
-        if (endDate !== undefined) payload.end_date = endDate;
+        if (endMonth !== undefined) payload.end_month = endMonth;
         if (notes !== undefined) payload.notes = notes;
         if (body.status !== undefined) payload.status = body.status;
         if (body.createdBy !== undefined) payload.created_by = body.createdBy;
@@ -164,7 +161,7 @@ export async function PATCH(
 
         const { data, error } = await admin
             .from('training_links')
-            .update(payload as unknown as TrainingLinkUpdate)
+            .update(payload)
             .eq('id', requireString(id, 'id'))
             .select('*')
             .single();
