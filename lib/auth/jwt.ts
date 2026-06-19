@@ -1,16 +1,14 @@
+// lib/auth/jwt.ts
 import jwt from 'jsonwebtoken';
-import type { UserRoleCode } from '@/types/auth';
+import type { UserRoleCode } from '@/types/auth.types';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-// BREAKING CHANGE: "role" (single string) replaced with "roles" (string[]),
-// since users can now hold multiple roles via the user_roles -> roles
-// relation. Update any code reading payload.role to use payload.roles
-// (e.g. payload.roles.includes('ADMIN')) instead.
+// users.role is a single enum value per the DB migration schema.
 export interface JwtPayload {
   userId: string;
   email: string;
-  roles: UserRoleCode[];
+  role: UserRoleCode;
 }
 
 export function signToken(payload: JwtPayload) {
