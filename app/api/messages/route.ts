@@ -1,6 +1,4 @@
-// app/api/messages/route.ts
 import { NextRequest } from 'next/server';
-
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
 import { readJsonBody, requireString } from '@/lib/api/validation';
@@ -8,12 +6,8 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import type { ConversationThreadResponse, MessageInput, MessageRecord } from '@/types/message.types';
 
 function handleError(error: unknown) {
-    if (error instanceof ApiError) {
-        return apiFailure(error.message, error.status, error.details);
-    }
-
-    const message = error instanceof Error ? error.message : 'Unexpected error.';
-    return apiFailure(message, 500, error);
+    if (error instanceof ApiError) return apiFailure(error.message, error.status, error.details);
+    return apiFailure(error instanceof Error ? error.message : 'Unexpected error.', 500, error);
 }
 
 function orderedPair(a: string, b: string): [string, string] {
@@ -21,18 +15,14 @@ function orderedPair(a: string, b: string): [string, string] {
 }
 
 function mapMessage(row: {
-    id: string;
-    conversation_id: string;
-    sender_id: string;
-    content: string;
-    is_read: boolean;
-    created_at: string;
+    id: string; conversation_id: string; sender_id: string;
+    content: string; is_read: boolean; created_at: string;
 }, senderNames: Map<string, string>): MessageRecord {
     return {
         id: row.id,
         conversationId: row.conversation_id,
         senderId: row.sender_id,
-        senderName: senderNames.get(row.sender_id) ?? undefined,
+        senderName: senderNames.get(row.sender_id),
         content: row.content,
         isRead: row.is_read,
         createdAt: row.created_at,
@@ -48,7 +38,7 @@ export async function GET(request: NextRequest) {
 
         const [userA, userB] = orderedPair(userId, otherId);
 
-        // Migration v2: conversations uses user_a_id / user_b_id (no course_id)
+        // conversations v2: user_a_id / user_b_id (không có course_id)
         const conversationResult = await admin
             .from('conversations')
             .select('id')
@@ -64,28 +54,20 @@ export async function GET(request: NextRequest) {
         }
 
         const [messagesResult, usersResult] = await Promise.all([
-            admin
-                .from('messages')
-                .select('*')
+            admin.from('messages').select('*')
                 .eq('conversation_id', conversationResult.data.id)
                 .order('created_at', { ascending: true }),
             admin.from('users').select('id, full_name'),
         ]);
-
         if (messagesResult.error) throw messagesResult.error;
         if (usersResult.error) throw usersResult.error;
 
         const senderNames = new Map((usersResult.data ?? []).map((u) => [u.id, u.full_name]));
-
-        const response: ConversationThreadResponse = {
+        return apiSuccess({
             conversationId: conversationResult.data.id,
             messages: (messagesResult.data ?? []).map((m) => mapMessage(m, senderNames)),
-        };
-
-        return apiSuccess(response);
-    } catch (error) {
-        return handleError(error);
-    }
+        });
+    } catch (error) { return handleError(error); }
 }
 
 export async function POST(request: NextRequest) {
@@ -97,22 +79,14 @@ export async function POST(request: NextRequest) {
         const toId = requireString(body.toId, 'toId');
         const content = requireString(body.content, 'content');
 
-        if (fromId === toId) {
-            throw new ApiError('fromId and toId must be different.', 400);
-        }
+        if (fromId === toId) throw new ApiError('fromId and toId must be different.', 400);
 
         const [userA, userB] = orderedPair(fromId, toId);
 
         let conversationId: string;
-
-        // Migration v2: conversations uses user_a_id / user_b_id (no course_id)
         const existing = await admin
-            .from('conversations')
-            .select('id')
-            .eq('user_a_id', userA)
-            .eq('user_b_id', userB)
-            .maybeSingle();
-
+            .from('conversations').select('id')
+            .eq('user_a_id', userA).eq('user_b_id', userB).maybeSingle();
         if (existing.error) throw existing.error;
 
         if (existing.data) {
@@ -121,34 +95,22 @@ export async function POST(request: NextRequest) {
             const created = await admin
                 .from('conversations')
                 .insert({ user_a_id: userA, user_b_id: userB })
-                .select('id')
-                .single();
-
+                .select('id').single();
             if (created.error) throw created.error;
             conversationId = created.data.id;
         }
 
-        // Migration v2: messages uses is_read (not email_sent)
+        // messages v2: is_read (không có email_sent)
         const inserted = await admin
             .from('messages')
-            .insert({
-                conversation_id: conversationId,
-                sender_id: fromId,
-                content,
-                is_read: false,
-            })
-            .select('*')
-            .single();
-
+            .insert({ conversation_id: conversationId, sender_id: fromId, content, is_read: false })
+            .select('*').single();
         if (inserted.error) throw inserted.error;
 
         const usersResult = await admin.from('users').select('id, full_name');
         if (usersResult.error) throw usersResult.error;
-
         const senderNames = new Map((usersResult.data ?? []).map((u) => [u.id, u.full_name]));
 
         return apiSuccess(mapMessage(inserted.data, senderNames), 201);
-    } catch (error) {
-        return handleError(error);
-    }
+    } catch (error) { return handleError(error); }
 }
