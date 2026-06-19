@@ -1,10 +1,8 @@
-// types/member.types.ts
-
 export interface MemberProfileRecord {
     id: string;
     fullName: string;
     email: string;
-    role: string;
+    roles: string[];
     status: string;
     birthDate: string | null;
     phone: string | null;
@@ -23,8 +21,8 @@ export interface DescendantLinkRecord {
     id: string;
     mentorId: string;
     discipleId: string;
-    startMonth: string;
-    endMonth: string | null;
+    startDate: string;
+    endDate: string | null;
     status: 'in_progress' | 'completed';
 }
 
@@ -34,22 +32,22 @@ export interface DescendantNodeRecord {
     link: DescendantLinkRecord;
 }
 
-export interface MemberDetailResponse {
-  member: MemberProfileRecord;
-  mentorStats: MentorStatRecord[];
-  descendants: DescendantNodeRecord[];
-  ancestors: AncestorNodeRecord[];
+export interface AncestorNodeRecord {
+    member: MemberProfileRecord;
+    level: number;
+    link: {
+        id: string;
+        mentorId: string;
+        discipleId: string;
+        startDate: string | null;
+        endDate: string | null;
+        status: string;
+    };
 }
 
-export interface AncestorNodeRecord {
-  member: MemberProfileRecord;
-  level: number; // 0 = mentor trực tiếp, 1 = mentor của mentor...
-  link: {
-    id: string;
-    mentorId: string;
-    discipleId: string;
-    startMonth: string | null;
-    endMonth: string | null;
-    status: string;
-  };
+export interface MemberDetailResponse {
+    member: MemberProfileRecord;
+    mentorStats: MentorStatRecord[];
+    descendants: DescendantNodeRecord[];
+    ancestors: AncestorNodeRecord[];
 }
