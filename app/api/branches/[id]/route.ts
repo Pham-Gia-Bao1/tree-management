@@ -12,12 +12,14 @@ import type {
 
 type BranchRow = {
   id: string;
+  code: string;
   name: string;
   city: string;
   is_active: boolean;
 };
 
 type BranchUpdatePayload = {
+  code?: string;
   name?: string;
   city?: string;
   is_active?: boolean;
@@ -33,6 +35,7 @@ function mapBranch(
 ): BranchRecord {
   return {
     id: row.id,
+    code: row.code,
     name: row.name,
     city: row.city,
     isActive: row.is_active,
@@ -165,6 +168,13 @@ export async function PATCH(
       );
 
     const payload: BranchUpdatePayload = {};
+
+    if (body.code !== undefined) {
+      payload.code = requireString(
+        body.code,
+        'code'
+      ).toUpperCase();
+    }
 
     if (body.name !== undefined) {
       payload.name = requireString(
