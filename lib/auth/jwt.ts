@@ -1,22 +1,19 @@
-// lib/auth/jwt.ts
 import jwt from 'jsonwebtoken';
-import type { UserRoleCode } from '@/types/auth.types';
+import type { RoleCode } from '@/types/auth.types';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-// users.role is a single enum value per the DB migration schema.
+// roles là mảng vì 1 user có thể có nhiều role (RBAC qua user_roles)
 export interface JwtPayload {
-  userId: string;
-  email: string;
-  role: UserRoleCode;
+    userId: string;
+    email: string;
+    roles: RoleCode[];
 }
 
 export function signToken(payload: JwtPayload) {
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: '7d',
-  });
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
 
 export function verifyToken(token: string) {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    return jwt.verify(token, JWT_SECRET) as JwtPayload;
 }
