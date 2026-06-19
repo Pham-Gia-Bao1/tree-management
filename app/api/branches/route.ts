@@ -6,9 +6,10 @@ import { readJsonBody, requireString } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import type { BranchInput, BranchRecord } from '@/types/branch.types';
 
-function mapBranch(row: { id: string; name: string; city: string; is_active: boolean }, counts: { members: number; mentors: number; trainings: number }): BranchRecord {
+function mapBranch(row: { id: string; code: string; name: string; city: string; is_active: boolean }, counts: { members: number; mentors: number; trainings: number }): BranchRecord {
     return {
         id: row.id,
+        code: row.code,
         name: row.name,
         city: row.city,
         isActive: row.is_active,
@@ -120,13 +121,27 @@ export async function GET(request: NextRequest) {
     }
 }
 
+function deriveBranchCode(name: string): string {
+    const initials = name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // strip Vietnamese diacritics
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((word) => word[0])
+        .join('')
+        .toUpperCase();
+    return (initials || 'BR').slice(0, 10);
+}
+
 export async function POST(request: NextRequest) {
     try {
         const admin = getSupabaseAdminClient();
         const body = await readJsonBody<Partial<BranchInput>>(request);
 
+        const name = requireString(body.name, 'name');
         const payload = {
-            name: requireString(body.name, 'name'),
+            code: (body.code?.trim() || deriveBranchCode(name)).toUpperCase(),
+            name,
             city: requireString(body.city, 'city'),
             is_active: body.isActive ?? true,
         };
