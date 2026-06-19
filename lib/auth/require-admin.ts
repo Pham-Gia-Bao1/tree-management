@@ -8,7 +8,7 @@ export async function requireAdmin() {
     throw new ApiError('Unauthorized', 401);
   }
 
-  if (user.role !== 'ADMIN') {
+  if (!user.roles.includes('ADMIN')) {
     throw new ApiError('Forbidden', 403);
   }
 
