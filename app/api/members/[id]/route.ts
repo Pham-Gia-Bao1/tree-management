@@ -1,3 +1,4 @@
+// app/api/members/[id]/route.ts
 import { NextRequest } from 'next/server';
 
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
@@ -145,10 +146,10 @@ export async function GET(
 
     const mentorStats: MentorStatRecord[] = [
       ...statsByCourse.entries(),
-    ].map(([courseId, total]) => ({
-      courseId,
+    ].map(([cId, total]) => ({
+      courseId: cId,
       courseName:
-        courseNames.get(courseId) ?? courseId,
+        courseNames.get(cId) ?? cId,
       totalDisciples: total,
     }));
 
@@ -224,6 +225,7 @@ export async function GET(
             id: link.id,
             mentorId: link.mentor_id,
             discipleId: link.disciple_id,
+            // DB columns are start_month / end_month
             startMonth: link.start_month,
             endMonth: link.end_month,
             status: link.status,
@@ -277,6 +279,7 @@ export async function GET(
             mentorId: parentLink.mentor_id,
             discipleId:
               parentLink.disciple_id,
+            // DB columns are start_month / end_month
             startMonth:
               parentLink.start_month,
             endMonth:
