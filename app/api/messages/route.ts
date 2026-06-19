@@ -1,3 +1,4 @@
+// app/api/messages/route.ts
 import { NextRequest } from 'next/server';
 
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
@@ -24,7 +25,7 @@ function mapMessage(row: {
     conversation_id: string;
     sender_id: string;
     content: string;
-    email_sent: boolean;
+    is_read: boolean;
     created_at: string;
 }, senderNames: Map<string, string>): MessageRecord {
     return {
@@ -33,7 +34,7 @@ function mapMessage(row: {
         senderId: row.sender_id,
         senderName: senderNames.get(row.sender_id) ?? undefined,
         content: row.content,
-        emailSent: row.email_sent,
+        isRead: row.is_read,
         createdAt: row.created_at,
     };
 }
@@ -42,18 +43,17 @@ export async function GET(request: NextRequest) {
     try {
         const admin = getSupabaseAdminClient();
         const params = new URL(request.url).searchParams;
-        const courseId = requireString(params.get('courseId'), 'courseId');
         const userId = requireString(params.get('userId'), 'userId');
         const otherId = requireString(params.get('otherId'), 'otherId');
 
-        const [memberA, memberB] = orderedPair(userId, otherId);
+        const [userA, userB] = orderedPair(userId, otherId);
 
+        // Migration v2: conversations uses user_a_id / user_b_id (no course_id)
         const conversationResult = await admin
             .from('conversations')
             .select('id')
-            .eq('course_id', courseId)
-            .eq('member_a', memberA)
-            .eq('member_b', memberB)
+            .eq('user_a_id', userA)
+            .eq('user_b_id', userB)
             .maybeSingle();
 
         if (conversationResult.error) throw conversationResult.error;
@@ -93,7 +93,6 @@ export async function POST(request: NextRequest) {
         const admin = getSupabaseAdminClient();
         const body = await readJsonBody<Partial<MessageInput>>(request);
 
-        const courseId = requireString(body.courseId, 'courseId');
         const fromId = requireString(body.fromId, 'fromId');
         const toId = requireString(body.toId, 'toId');
         const content = requireString(body.content, 'content');
@@ -102,15 +101,16 @@ export async function POST(request: NextRequest) {
             throw new ApiError('fromId and toId must be different.', 400);
         }
 
-        const [memberA, memberB] = orderedPair(fromId, toId);
+        const [userA, userB] = orderedPair(fromId, toId);
 
         let conversationId: string;
+
+        // Migration v2: conversations uses user_a_id / user_b_id (no course_id)
         const existing = await admin
             .from('conversations')
             .select('id')
-            .eq('course_id', courseId)
-            .eq('member_a', memberA)
-            .eq('member_b', memberB)
+            .eq('user_a_id', userA)
+            .eq('user_b_id', userB)
             .maybeSingle();
 
         if (existing.error) throw existing.error;
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
         } else {
             const created = await admin
                 .from('conversations')
-                .insert({ course_id: courseId, member_a: memberA, member_b: memberB })
+                .insert({ user_a_id: userA, user_b_id: userB })
                 .select('id')
                 .single();
 
@@ -128,21 +128,19 @@ export async function POST(request: NextRequest) {
             conversationId = created.data.id;
         }
 
+        // Migration v2: messages uses is_read (not email_sent)
         const inserted = await admin
             .from('messages')
             .insert({
                 conversation_id: conversationId,
                 sender_id: fromId,
                 content,
-                email_sent: false,
+                is_read: false,
             })
             .select('*')
             .single();
 
         if (inserted.error) throw inserted.error;
-
-        // TODO: enqueue background job gửi email qua AWS SES tới user `toId`,
-        // sau đó update messages.email_sent = true.
 
         const usersResult = await admin.from('users').select('id, full_name');
         if (usersResult.error) throw usersResult.error;
