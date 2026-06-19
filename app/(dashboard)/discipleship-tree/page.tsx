@@ -845,9 +845,13 @@ export default function Diagram() {
                 {selectedMemberDetail.member.branchName}
               </Text>
 
-              <Tag color="processing">
-                {selectedMemberDetail.member.role}
-              </Tag>
+              <Space wrap>
+  {selectedMemberDetail.member.roles?.map(role => (
+    <Tag key={role} color="processing">
+      {role}
+    </Tag>
+  ))}
+</Space>
             </Flex>
           </Space>
 
