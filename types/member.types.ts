@@ -1,3 +1,5 @@
+// types/member.types.ts
+
 export interface MemberProfileRecord {
     id: string;
     fullName: string;
