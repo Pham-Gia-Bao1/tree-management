@@ -221,13 +221,15 @@ const T: Record<string, Record<string, string>> = {
     },
 };
 
+// Mirrors TreeLinkRecord from @/types/tree.types (API response shape for
+// /api/discipleship-tree); DB columns are start_date / end_date.
 type Link = {
     id: string;
-    courseId: string;
     mentorId: string;
     discipleId: string;
-    startMonth?: string;
-    endMonth?: string;
+    startDate?: string;
+    endDate?: string | null;
+    status?: 'in_progress' | 'completed';
 };
 
 type Course = {
@@ -246,8 +248,8 @@ type DescendantNode = {
     level: number;
     link: {
         id: string;
-        startMonth?: string;
-        endMonth?: string;
+        startDate?: string;
+        endDate?: string | null;
     };
 };
 
@@ -546,7 +548,7 @@ const DiscipleNode = ({ data }: any) => {
             </div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                 <Tag color="green">Môn đồ</Tag>
-                {link?.startMonth && (
+                {link?.startDate && (
                     <Tag
                         style={{
                             fontSize: 9,
@@ -555,7 +557,7 @@ const DiscipleNode = ({ data }: any) => {
                             color: "#64748B",
                         }}
                     >
-                        {link.startMonth} → {link.endMonth}
+                        {link.startDate} → {link.endDate ?? '-'}
                     </Tag>
                 )}
             </div>
