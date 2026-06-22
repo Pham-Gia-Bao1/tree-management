@@ -27,7 +27,6 @@ import {
 
 import type {
     TrainingRelationRecord,
-    TrainingRelationInput,
 } from '@/types/training-link.types';
 
 import type {
@@ -361,7 +360,7 @@ const [loading,setLoading] =
 
 
 
-            const payload:TrainingRelationInput = {
+            const payload:TrainingRelationRecord = {
 
 
                 courseId:
