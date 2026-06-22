@@ -24,3 +24,15 @@ export interface TrainingRelationRecord {
     createdAt: string;
     updatedAt: string;
 }
+
+
+export interface TrainingRelationInput {
+    courseId: string;
+    mentorId: string;
+    discipleId: string;
+    startDate: string;
+    endDate?: string | null;
+    status?: 'in_progress' | 'completed';
+    notes?: string | null;
+    createdBy?: string | null;
+}
