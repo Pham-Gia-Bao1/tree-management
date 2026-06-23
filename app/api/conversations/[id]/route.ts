@@ -1,18 +1,24 @@
+// PATH: /api/conversations/[id]
 import { NextRequest } from 'next/server';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
 import { requireString } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 
+type RouteContext = {
+    params: Promise<{ id: string }>;
+};
+
 function handleError(error: unknown) {
     if (error instanceof ApiError) return apiFailure(error.message, error.status, error.details);
     return apiFailure(error instanceof Error ? error.message : 'Unexpected error.', 500, error);
 }
 
-export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_request: NextRequest, { params }: RouteContext) {
     try {
+        const { id } = await params;
         const admin = getSupabaseAdminClient();
-        const conversationId = requireString(params.id, 'id');
+        const conversationId = requireString(id, 'id');
 
         const conversationResult = await admin.from('conversations').select('*').eq('id', conversationId).maybeSingle();
         if (conversationResult.error) throw conversationResult.error;
