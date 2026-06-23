@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   App,
   Avatar,
-  Breadcrumb,
   Button,
   Card,
   Descriptions,
@@ -16,7 +15,6 @@ import {
   Select,
   Space,
   Spin,
-  Table,
   Tag,
   Typography,
 } from 'antd';
@@ -31,6 +29,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
+import DataPage from '@/components/common/DataPage';
 
 const { Title, Text } = Typography;
 
@@ -120,7 +119,7 @@ export default function TrainingRelationsPage() {
   const [mentorFilter, setMentorFilter] = useState<string | null>(null);
   const [discipleFilter, setDiscipleFilter] = useState<string | null>(null);
   const [courseFilter, setCourseFilter] = useState<string | null>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
@@ -358,13 +357,6 @@ export default function TrainingRelationsPage() {
     if (drawerMode === 'create') return handleCreate();
     if (drawerMode === 'edit') return handleUpdate();
   }, [drawerMode, handleCreate, handleUpdate]);
-
-  // ── Debounced search ──────────────────────────────────────────────────────
-
-  const onSearchChange = (value: string) => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => setSearch(value), 500);
-  };
 
   // ── Columns ───────────────────────────────────────────────────────────────
 
@@ -609,29 +601,28 @@ export default function TrainingRelationsPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Page title */}
-      <div className="px-6 pt-6 pb-2">
-        <Title level={4} style={{ margin: 0 }}>
-          Training Relations
-        </Title>
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          Manage mentor–disciple training relationships
-        </Text>
-      </div>
-
-      {/* Toolbar */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-6 py-3 mt-3"
-        style={{ boxShadow: '0 1px 4px rgba(0,0,0,.06)' }}
-      >
-        <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex flex-wrap gap-3 items-center">
-            <Input.Search
-              placeholder="Search by mentor, disciple, course, branch…"
-              allowClear
-              onChange={(e) => onSearchChange(e.target.value)}
-              style={{ width: 280 }}
-            />
+    <div>
+      <DataPage<RelationRow>
+        title="Training Relations"
+        subtitle="Manage mentor–disciple training relationships"
+        columns={columns}
+        dataSource={filteredData}
+        loading={loading}
+        searchable
+        searchPlaceholder="Search by mentor, disciple, course, branch…"
+        onSearch={(kw) => setSearch(kw)}
+        onRefresh={() => void loadRelations()}
+        actions={
+          <Button
+            type="primary"
+            icon={<Plus size={15} />}
+            onClick={openCreateDrawer}
+          >
+            Create Relation
+          </Button>
+        }
+        filters={
+          <>
             <Select
               placeholder="Filter by Mentor"
               allowClear
@@ -653,51 +644,19 @@ export default function TrainingRelationsPage() {
               onChange={setCourseFilter}
               style={{ width: 180 }}
             />
-            <Button
-              icon={<RefreshCw size={14} />}
-              onClick={() => void loadRelations()}
-              loading={loading}
-            >
-              Refresh
-            </Button>
-          </div>
-          <Button
-            type="primary"
-            icon={<Plus size={15} />}
-            onClick={openCreateDrawer}
-          >
-            Create Relation
-          </Button>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="px-6 py-5">
-        <Card className="rounded-xl shadow-sm" bodyStyle={{ padding: 0 }}>
-          <Table<RelationRow>
-            columns={columns}
-            dataSource={filteredData}
-            loading={loading}
-            size="middle"
-            scroll={{ x: 1200, y: 'calc(100vh - 300px)' }}
-            sticky
-            pagination={{
-              pageSize: 15,
-              showSizeChanger: true,
-              showTotal: (total) => `${total} relations`,
-            }}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="No training relations found"
-                  className="py-12"
-                />
-              ),
-            }}
-          />
-        </Card>
-      </div>
+          </>
+        }
+        tableProps={{
+          size: 'middle',
+          scroll: { x: 1200 },
+          sticky: true,
+          pagination: {
+            pageSize: 15,
+            showSizeChanger: true,
+            showTotal: (total) => `${total} relations`,
+          },
+        }}
+      />
 
       {/* Drawer */}
       <Drawer
