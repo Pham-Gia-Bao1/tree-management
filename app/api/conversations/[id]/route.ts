@@ -9,6 +9,17 @@ type RouteContext = {
     params: Promise<{ id: string }>;
 };
 
+type AdminClient = ReturnType<typeof getSupabaseAdminClient>;
+
+/**
+ * `conversation_members` is not yet present in the generated Supabase
+ * Database types. Route all access through this helper so the type
+ * escape hatch lives in one place instead of scattered inline casts.
+ */
+function membersTable(admin: AdminClient): any {
+    return (admin as unknown as { from: (table: string) => any }).from('conversation_members');
+}
+
 function handleError(error: unknown) {
     if (error instanceof ApiError) return apiFailure(error.message, error.status, error.details);
     return apiFailure(error instanceof Error ? error.message : 'Unexpected error.', 500, error);
@@ -24,7 +35,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
         if (conversationResult.error) throw conversationResult.error;
         if (!conversationResult.data) throw new ApiError('Conversation not found.', 404);
 
-        const membersResult = await admin.from('conversation_members').select('*').eq('conversation_id', conversationId);
+        const membersResult = await membersTable(admin).select('*').eq('conversation_id', conversationId);
         if (membersResult.error) throw membersResult.error;
 
         const userIds = (membersResult.data ?? []).map((m) => m.user_id);
