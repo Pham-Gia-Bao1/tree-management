@@ -1,8 +1,13 @@
+// PATH: /api/conversations/[id]/messages
 import { NextRequest } from 'next/server';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
 import { readJsonBody, requireString, optionalString } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+
+type RouteContext = {
+    params: Promise<{ id: string }>;
+};
 
 type MessageType = 'text' | 'image' | 'file' | 'system';
 
@@ -65,10 +70,11 @@ function mapMessage(row: MessageRow, senderNames: Map<string, string>, repliedTo
     };
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: RouteContext) {
     try {
+        const { id } = await params;
         const admin = getSupabaseAdminClient();
-        const conversationId = requireString(params.id, 'id');
+        const conversationId = requireString(id, 'id');
 
         const searchParams = new URL(request.url).searchParams;
         const userId = requireString(searchParams.get('userId'), 'userId');
@@ -125,10 +131,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: RouteContext) {
     try {
+        const { id } = await params;
         const admin = getSupabaseAdminClient();
-        const conversationId = requireString(params.id, 'id');
+        const conversationId = requireString(id, 'id');
 
         const body = await readJsonBody<{
             senderId?: string;
