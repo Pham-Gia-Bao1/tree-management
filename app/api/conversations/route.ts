@@ -5,6 +5,17 @@ import { ApiError } from '@/lib/api/api-error';
 import { readJsonBody, requireString, optionalString } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 
+type AdminClient = ReturnType<typeof getSupabaseAdminClient>;
+
+/**
+ * `conversation_members` is not yet present in the generated Supabase
+ * Database types. Route all access through this helper so the type
+ * escape hatch lives in one place instead of scattered inline casts.
+ */
+function membersTable(admin: AdminClient): any {
+    return (admin as unknown as { from: (table: string) => any }).from('conversation_members');
+}
+
 type ConversationType = 'private' | 'group' | 'system';
 
 interface ConversationRow {
@@ -105,15 +116,14 @@ async function assertAllowedToChat(
     if (isMentorOrDisciple) return;
 
     // Fallback: allowed if they already share any conversation.
-    const myMemberships = await admin.from('conversation_members').select('conversation_id').eq('user_id', userId);
+    const myMemberships = await membersTable(admin).select('conversation_id').eq('user_id', userId);
     if (myMemberships.error) throw myMemberships.error;
     const conversationIds = (myMemberships.data ?? []).map((m) => m.conversation_id);
     if (conversationIds.length === 0) {
         throw new ApiError('You are not allowed to message this user.', 403);
     }
 
-    const sharedResult = await admin
-        .from('conversation_members')
+    const sharedResult = await membersTable(admin)
         .select('conversation_id')
         .eq('user_id', otherUserId)
         .in('conversation_id', conversationIds)
@@ -131,8 +141,7 @@ export async function GET(request: NextRequest) {
         const params = new URL(request.url).searchParams;
         const userId = requireString(params.get('userId'), 'userId');
 
-        const membershipResult = await admin
-            .from('conversation_members')
+        const membershipResult = await membersTable(admin)
             .select('*')
             .eq('user_id', userId);
         if (membershipResult.error) throw membershipResult.error;
@@ -145,7 +154,7 @@ export async function GET(request: NextRequest) {
 
         const [conversationsResult, allMembersResult] = await Promise.all([
             admin.from('conversations').select('*').in('id', conversationIds).eq('is_archived', false),
-            admin.from('conversation_members').select('*').in('conversation_id', conversationIds),
+            membersTable(admin).select('*').in('conversation_id', conversationIds),
         ]);
         if (conversationsResult.error) throw conversationsResult.error;
         if (allMembersResult.error) throw allMembersResult.error;
@@ -261,7 +270,7 @@ export async function POST(request: NextRequest) {
 
             const [userA, userB] = sortedPair(createdBy, otherUserId);
 
-            const myMemberships = await admin.from('conversation_members').select('conversation_id').eq('user_id', userA);
+            const myMemberships = await membersTable(admin).select('conversation_id').eq('user_id', userA);
             if (myMemberships.error) throw myMemberships.error;
             const candidateIds = (myMemberships.data ?? []).map((m) => m.conversation_id);
 
@@ -274,8 +283,7 @@ export async function POST(request: NextRequest) {
                 if (candidatesResult.error) throw candidatesResult.error;
 
                 for (const candidate of candidatesResult.data ?? []) {
-                    const membersResult = await admin
-                        .from('conversation_members')
+                    const membersResult = await membersTable(admin)
                         .select('user_id')
                         .eq('conversation_id', candidate.id);
                     if (membersResult.error) throw membersResult.error;
@@ -295,7 +303,7 @@ export async function POST(request: NextRequest) {
                 .single();
             if (insertedConversation.error) throw insertedConversation.error;
 
-            const membersInsert = await admin.from('conversation_members').insert([
+            const membersInsert = await membersTable(admin).insert([
                 { conversation_id: insertedConversation.data.id, user_id: userA, role: 'member' },
                 { conversation_id: insertedConversation.data.id, user_id: userB, role: 'member' },
             ]);
@@ -325,7 +333,7 @@ export async function POST(request: NextRequest) {
             if (insertedConversation.error) throw insertedConversation.error;
 
             const allMemberIds = Array.from(new Set([createdBy, ...memberIds]));
-            const membersInsert = await admin.from('conversation_members').insert(
+            const membersInsert = await membersTable(admin).insert(
                 allMemberIds.map((userId) => ({
                     conversation_id: insertedConversation.data.id,
                     user_id: userId,
