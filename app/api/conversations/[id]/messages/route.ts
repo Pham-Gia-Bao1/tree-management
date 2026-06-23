@@ -1,14 +1,10 @@
-// PATH: /app/api/conversations/[id]/messages/route.ts
-
+// PATH: /api/conversations/[id]/messages
 import { NextRequest } from 'next/server';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
-import {
-    readJsonBody,
-    requireString,
-    optionalString,
-} from '@/lib/api/validation';
+import { readJsonBody, requireString, optionalString } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { Database } from '@/types/database.types';
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -16,176 +12,91 @@ type RouteContext = {
 
 type AdminClient = ReturnType<typeof getSupabaseAdminClient>;
 
-function membersTable(admin: AdminClient): any {
-    return (admin as unknown as {
-        from: (table: string) => any;
-    }).from('conversation_members');
-}
+type MessageRow = Database['public']['Tables']['messages']['Row'];
+type ConversationMemberRow = Database['public']['Tables']['conversation_members']['Row'];
+type UserRow = Database['public']['Tables']['users']['Row'];
 
-type MessageType = 'text' | 'image' | 'file' | 'system';
+type MessageType = Database['public']['Enums']['message_type'];
 
-interface MessageRow {
-    id: string;
-    conversation_id: string;
-    sender_id: string;
-    type: MessageType;
-    content: string;
-    attachment_url: string | null;
-    attachment_name: string | null;
-    attachment_size: number | null;
-    reply_to_id: string | null;
-    is_edited: boolean;
-    is_deleted: boolean;
-    created_at: string;
-    updated_at: string;
-}
-
-interface UserRow {
-    id: string;
-    full_name: string;
+function membersTable(admin: AdminClient) {
+    return admin.from('conversation_members' as const);
 }
 
 function handleError(error: unknown) {
-    if (error instanceof ApiError) {
-        return apiFailure(error.message, error.status, error.details);
-    }
-
-    return apiFailure(
-        error instanceof Error ? error.message : 'Unexpected error.',
-        500,
-        error,
-    );
+    if (error instanceof ApiError) return apiFailure(error.message, error.status, error.details);
+    return apiFailure(error instanceof Error ? error.message : 'Unexpected error.', 500, error);
 }
 
 async function assertMember(
     admin: AdminClient,
     conversationId: string,
-    userId: string,
+    userId: string
 ) {
-    const result = await membersTable(admin)
+    const membership = await membersTable(admin)
         .select('id')
         .eq('conversation_id', conversationId)
         .eq('user_id', userId)
         .maybeSingle();
 
-    if (result.error) {
-        throw result.error;
-    }
-
-    if (!result.data) {
-        throw new ApiError(
-            'You are not a member of this conversation.',
-            403,
-        );
+    if (membership.error) throw membership.error;
+    if (!membership.data) {
+        throw new ApiError('You are not a member of this conversation.', 403);
     }
 }
 
 function mapMessage(
     row: MessageRow,
     senderNames: Map<string, string>,
-    repliedTo: Map<string, MessageRow>,
+    repliedTo: Map<string, MessageRow>
 ) {
-    const reply = row.reply_to_id
-        ? repliedTo.get(row.reply_to_id)
-        : undefined;
+    const reply = row.reply_to_id ? repliedTo.get(row.reply_to_id) : undefined;
 
     return {
         id: row.id,
         conversationId: row.conversation_id,
-
         senderId: row.sender_id,
-        senderName:
-            senderNames.get(row.sender_id) ?? 'Unknown user',
-
+        senderName: senderNames.get(row.sender_id ?? '') ?? 'Unknown user',
         type: row.type,
-
-        content: row.is_deleted
-            ? 'Message deleted'
-            : row.content,
-
-        attachmentUrl: row.is_deleted
-            ? null
-            : row.attachment_url,
-
-        attachmentName: row.is_deleted
-            ? null
-            : row.attachment_name,
-
-        attachmentSize: row.is_deleted
-            ? null
-            : row.attachment_size,
-
+        content: row.is_deleted ? 'Message deleted' : (row.content ?? ''),
+        attachmentUrl: row.is_deleted ? null : row.attachment_url,
+        attachmentName: row.is_deleted ? null : row.attachment_name,
+        attachmentSize: row.is_deleted ? null : row.attachment_size,
         replyToId: row.reply_to_id,
-
         replyPreview: reply
             ? {
                   id: reply.id,
-                  senderName:
-                      senderNames.get(reply.sender_id) ??
-                      'Unknown user',
-
-                  content: reply.is_deleted
-                      ? 'Message deleted'
-                      : reply.content,
+                  senderName: senderNames.get(reply.sender_id ?? '') ?? 'Unknown user',
+                  content: reply.is_deleted ? 'Message deleted' : (reply.content ?? ''),
               }
             : null,
-
         isEdited: row.is_edited,
         isDeleted: row.is_deleted,
-
         createdAt: row.created_at,
         updatedAt: row.updated_at,
     };
 }
 
-/* =========================================================
-   GET MESSAGES
-========================================================= */
-
-export async function GET(
-    request: NextRequest,
-    { params }: RouteContext,
-) {
+export async function GET(request: NextRequest, { params }: RouteContext) {
     try {
         const { id } = await params;
-
         const admin = getSupabaseAdminClient();
 
         const conversationId = requireString(id, 'id');
 
         const searchParams = new URL(request.url).searchParams;
+        const userId = requireString(searchParams.get('userId'), 'userId');
 
-        const userId = requireString(
-            searchParams.get('userId'),
-            'userId',
-        );
-
-        const page = Math.max(
-            1,
-            Number(searchParams.get('page') ?? '1') || 1,
-        );
-
-        const limit = Math.min(
-            100,
-            Math.max(
-                1,
-                Number(searchParams.get('limit') ?? '30') || 30,
-            ),
-        );
+        const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1);
+        const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? '30') || 30));
 
         await assertMember(admin, conversationId, userId);
 
         const totalResult = await admin
             .from('messages')
-            .select('id', {
-                count: 'exact',
-                head: true,
-            })
+            .select('id', { count: 'exact', head: true })
             .eq('conversation_id', conversationId);
 
-        if (totalResult.error) {
-            throw totalResult.error;
-        }
+        if (totalResult.error) throw totalResult.error;
 
         const total = totalResult.count ?? 0;
 
@@ -195,87 +106,44 @@ export async function GET(
             .from('messages')
             .select('*')
             .eq('conversation_id', conversationId)
-            .order('created_at', {
-                ascending: false,
-            })
+            .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
-        if (messagesResult.error) {
-            throw messagesResult.error;
-        }
+        if (messagesResult.error) throw messagesResult.error;
 
-        const rows = ((messagesResult.data ?? []) as MessageRow[])
-            .slice()
-            .reverse();
+        const rows = ((messagesResult.data ?? []) as MessageRow[]).slice().reverse();
 
-        const senderIds = Array.from(
-            new Set(rows.map((row) => row.sender_id)),
-        );
-
+        const senderIds = Array.from(new Set(rows.map((r) => r.sender_id).filter(Boolean))) as string[];
         const replyIds = Array.from(
-            new Set(
-                rows
-                    .map((row) => row.reply_to_id)
-                    .filter(
-                        (id): id is string =>
-                            typeof id === 'string',
-                    ),
-            ),
+            new Set(rows.map((r) => r.reply_to_id).filter((id): id is string => Boolean(id)))
         );
 
-        const [usersResult, repliesResult] =
-            await Promise.all([
-                senderIds.length
-                    ? admin
-                          .from('users')
-                          .select('id, full_name')
-                          .in('id', senderIds)
-                    : Promise.resolve({
-                          data: [] as UserRow[],
-                          error: null,
-                      }),
+        const [usersResult, repliesResult] = await Promise.all([
+            senderIds.length > 0
+                ? admin.from('users').select('id, full_name').in('id', senderIds)
+                : Promise.resolve({ data: [] as Pick<UserRow, 'id' | 'full_name'>[], error: null }),
 
-                replyIds.length
-                    ? admin
-                          .from('messages')
-                          .select('*')
-                          .in('id', replyIds)
-                    : Promise.resolve({
-                          data: [] as MessageRow[],
-                          error: null,
-                      }),
-            ]);
+            replyIds.length > 0
+                ? admin.from('messages').select('*').in('id', replyIds)
+                : Promise.resolve({ data: [] as MessageRow[], error: null }),
+        ]);
 
-        if (usersResult.error) {
-            throw usersResult.error;
-        }
+        if (usersResult.error) throw usersResult.error;
+        if (repliesResult.error) throw repliesResult.error;
 
-        if (repliesResult.error) {
-            throw repliesResult.error;
-        }
-
-        const senderNames = new Map<string, string>(
-            (usersResult.data ?? []).map((user: UserRow) => [
-                user.id,
-                user.full_name,
-            ]),
+        const senderNames = new Map(
+            (usersResult.data ?? []).map((u) => [u.id, u.full_name])
         );
 
-        const repliedTo = new Map<string, MessageRow>(
-            ((repliesResult.data ?? []) as MessageRow[]).map(
-                (message) => [message.id, message],
-            ),
+        const repliedTo = new Map(
+            (repliesResult.data ?? []).map((r) => [r.id, r as MessageRow])
         );
 
         return apiSuccess({
-            messages: rows.map((row) =>
-                mapMessage(row, senderNames, repliedTo),
-            ),
-
+            messages: rows.map((row) => mapMessage(row, senderNames, repliedTo)),
             page,
             limit,
             total,
-
             hasMore: offset + rows.length < total,
         });
     } catch (error) {
@@ -283,24 +151,16 @@ export async function GET(
     }
 }
 
-/* =========================================================
-   CREATE MESSAGE
-========================================================= */
-
-export async function POST(
-    request: NextRequest,
-    { params }: RouteContext,
-) {
+export async function POST(request: NextRequest, { params }: RouteContext) {
     try {
         const { id } = await params;
-
         const admin = getSupabaseAdminClient();
 
         const conversationId = requireString(id, 'id');
 
         const body = await readJsonBody<{
             senderId?: string;
-            type?: string;
+            type?: MessageType;
             content?: string;
             attachmentUrl?: string;
             attachmentName?: string;
@@ -308,122 +168,60 @@ export async function POST(
             replyToId?: string;
         }>(request);
 
-        const senderId = requireString(
-            body.senderId,
-            'senderId',
-        );
+        const senderId = requireString(body.senderId, 'senderId');
 
-        await assertMember(
-            admin,
-            conversationId,
-            senderId,
-        );
+        await assertMember(admin, conversationId, senderId);
 
-        const type = (
-            optionalString(body.type) ?? 'text'
-        ) as MessageType;
+        const type: MessageType = (optionalString(body.type) ?? 'text') as MessageType;
 
-        if (
-            !['text', 'image', 'file', 'system'].includes(
-                type,
-            )
-        ) {
-            throw new ApiError(
-                'Invalid message type.',
-                400,
-            );
+        if (type === 'text' && !optionalString(body.content)) {
+            throw new ApiError('content is required for text messages.', 400);
         }
 
-        if (
-            type === 'text' &&
-            !optionalString(body.content)
-        ) {
-            throw new ApiError(
-                'content is required for text messages.',
-                400,
-            );
-        }
-
-        if (
-            ['image', 'file'].includes(type) &&
-            !optionalString(body.attachmentUrl)
-        ) {
-            throw new ApiError(
-                'attachmentUrl is required.',
-                400,
-            );
+        if ((type === 'image' || type === 'file') && !optionalString(body.attachmentUrl)) {
+            throw new ApiError('attachmentUrl is required for image/file messages.', 400);
         }
 
         if (body.replyToId) {
-            const replyCheck = await admin
+            const replyResult = await admin
                 .from('messages')
                 .select('id')
                 .eq('id', body.replyToId)
                 .eq('conversation_id', conversationId)
                 .maybeSingle();
 
-            if (replyCheck.error) {
-                throw replyCheck.error;
-            }
-
-            if (!replyCheck.data) {
-                throw new ApiError(
-                    'replyToId does not belong to this conversation.',
-                    400,
-                );
+            if (replyResult.error) throw replyResult.error;
+            if (!replyResult.data) {
+                throw new ApiError('replyToId does not belong to this conversation.', 400);
             }
         }
 
-        const insertResult = await admin
+        const insertedResult = await admin
             .from('messages')
             .insert({
                 conversation_id: conversationId,
                 sender_id: senderId,
-
                 type,
-
-                content:
-                    optionalString(body.content) ?? '',
-
-                attachment_url:
-                    optionalString(body.attachmentUrl) ??
-                    null,
-
-                attachment_name:
-                    optionalString(body.attachmentName) ??
-                    null,
-
-                attachment_size:
-                    body.attachmentSize ?? null,
-
-                reply_to_id:
-                    optionalString(body.replyToId) ?? null,
-
+                content: optionalString(body.content) ?? '',
+                attachment_url: optionalString(body.attachmentUrl) ?? null,
+                attachment_name: optionalString(body.attachmentName) ?? null,
+                attachment_size: body.attachmentSize ?? null,
+                reply_to_id: optionalString(body.replyToId) ?? null,
                 is_edited: false,
                 is_deleted: false,
             })
             .select('*')
             .single();
 
-        if (insertResult.error) {
-            throw insertResult.error;
-        }
+        if (insertedResult.error) throw insertedResult.error;
 
-        const insertedMessage =
-            insertResult.data as MessageRow;
-
-        const updateConversation = await admin
+        await admin
             .from('conversations')
             .update({
-                last_message_id: insertedMessage.id,
-                last_message_at:
-                    insertedMessage.created_at,
+                last_message_id: insertedResult.data.id,
+                last_message_at: insertedResult.data.created_at,
             })
             .eq('id', conversationId);
-
-        if (updateConversation.error) {
-            throw updateConversation.error;
-        }
 
         const senderResult = await admin
             .from('users')
@@ -431,67 +229,36 @@ export async function POST(
             .eq('id', senderId)
             .single();
 
-        if (senderResult.error) {
-            throw senderResult.error;
-        }
+        if (senderResult.error) throw senderResult.error;
 
-        const senderNames = new Map<string, string>([
-            [
-                senderResult.data.id,
-                senderResult.data.full_name,
-            ],
-        ]);
-
+        const senderNames = new Map([[senderId, senderResult.data.full_name]]);
         const repliedTo = new Map<string, MessageRow>();
 
         if (body.replyToId) {
-            const replyResult = await admin
+            const replyRowResult = await admin
                 .from('messages')
                 .select('*')
                 .eq('id', body.replyToId)
-                .maybeSingle();
+                .single();
 
-            if (!replyResult.error && replyResult.data) {
-                const replyMessage =
-                    replyResult.data as MessageRow;
+            if (!replyRowResult.error && replyRowResult.data) {
+                repliedTo.set(body.replyToId, replyRowResult.data as MessageRow);
 
-                repliedTo.set(
-                    replyMessage.id,
-                    replyMessage,
-                );
+                const replySenderResult = await admin
+                    .from('users')
+                    .select('id, full_name')
+                    .eq('id', replyRowResult.data.sender_id)
+                    .maybeSingle();
 
-                if (replyMessage.sender_id) {
-                    const replySenderResult =
-                        await admin
-                            .from('users')
-                            .select('id, full_name')
-                            .eq(
-                                'id',
-                                replyMessage.sender_id,
-                            )
-                            .maybeSingle();
-
-                    if (
-                        !replySenderResult.error &&
-                        replySenderResult.data
-                    ) {
-                        senderNames.set(
-                            replySenderResult.data.id,
-                            replySenderResult.data
-                                .full_name,
-                        );
-                    }
+                if (!replySenderResult.error && replySenderResult.data) {
+                    senderNames.set(replySenderResult.data.id, replySenderResult.data.full_name);
                 }
             }
         }
 
         return apiSuccess(
-            mapMessage(
-                insertedMessage,
-                senderNames,
-                repliedTo,
-            ),
-            201,
+            mapMessage(insertedResult.data as MessageRow, senderNames, repliedTo),
+            201
         );
     } catch (error) {
         return handleError(error);
