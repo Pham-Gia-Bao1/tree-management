@@ -610,71 +610,63 @@ export default function TrainingRelationsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div
-        className="sticky top-0 z-20 bg-white border-b border-gray-100 px-6 py-4"
+      {/* Page title */}
+      <div className="px-6 pt-6 pb-2">
+        <Title level={4} style={{ margin: 0 }}>
+          Training Relations
+        </Title>
+        <Text type="secondary" style={{ fontSize: 13 }}>
+          Manage mentor–disciple training relationships
+        </Text>
+      </div>
+
+      {/* Toolbar */}
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-6 py-3 mt-3"
         style={{ boxShadow: '0 1px 4px rgba(0,0,0,.06)' }}
       >
-        <Breadcrumb
-          items={[{ title: 'Home' }, { title: 'Training Relations' }]}
-          className="mb-1"
-        />
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <Title level={4} style={{ margin: 0 }}>
-              Training Relations
-            </Title>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              Manage mentor–disciple training relationships
-            </Text>
+        <div className="flex flex-wrap gap-3 items-center justify-between">
+          <div className="flex flex-wrap gap-3 items-center">
+            <Input.Search
+              placeholder="Search by mentor, disciple, course, branch…"
+              allowClear
+              onChange={(e) => onSearchChange(e.target.value)}
+              style={{ width: 280 }}
+            />
+            <Select
+              placeholder="Filter by Mentor"
+              allowClear
+              options={mentorOptions}
+              onChange={setMentorFilter}
+              style={{ width: 180 }}
+            />
+            <Select
+              placeholder="Filter by Disciple"
+              allowClear
+              options={discipleOptions}
+              onChange={setDiscipleFilter}
+              style={{ width: 180 }}
+            />
+            <Select
+              placeholder="Filter by Course"
+              allowClear
+              options={courseOptions}
+              onChange={setCourseFilter}
+              style={{ width: 180 }}
+            />
+            <Button
+              icon={<RefreshCw size={14} />}
+              onClick={() => void loadRelations()}
+              loading={loading}
+            >
+              Refresh
+            </Button>
           </div>
           <Button
             type="primary"
             icon={<Plus size={15} />}
             onClick={openCreateDrawer}
-            style={{ borderRadius: 8 }}
           >
             Create Relation
-          </Button>
-        </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="sticky top-[73px] z-10 bg-white border-b border-gray-100 px-6 py-3">
-        <div className="flex flex-wrap gap-3 items-center">
-          <Input.Search
-            placeholder="Search by mentor, disciple, course, branch…"
-            allowClear
-            onChange={(e) => onSearchChange(e.target.value)}
-            style={{ width: 300, borderRadius: 8 }}
-          />
-          <Select
-            placeholder="Filter by Mentor"
-            allowClear
-            options={mentorOptions}
-            onChange={setMentorFilter}
-            style={{ width: 200 }}
-          />
-          <Select
-            placeholder="Filter by Disciple"
-            allowClear
-            options={discipleOptions}
-            onChange={setDiscipleFilter}
-            style={{ width: 200 }}
-          />
-          <Select
-            placeholder="Filter by Course"
-            allowClear
-            options={courseOptions}
-            onChange={setCourseFilter}
-            style={{ width: 200 }}
-          />
-          <Button
-            icon={<RefreshCw size={14} />}
-            onClick={() => void loadRelations()}
-            loading={loading}
-          >
-            Refresh
           </Button>
         </div>
       </div>
