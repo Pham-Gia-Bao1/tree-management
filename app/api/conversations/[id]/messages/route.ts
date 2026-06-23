@@ -13,9 +13,7 @@ type RouteContext = {
 type AdminClient = ReturnType<typeof getSupabaseAdminClient>;
 
 type MessageRow = Database['public']['Tables']['messages']['Row'];
-type ConversationMemberRow = Database['public']['Tables']['conversation_members']['Row'];
 type UserRow = Database['public']['Tables']['users']['Row'];
-
 type MessageType = Database['public']['Enums']['message_type'];
 
 function membersTable(admin: AdminClient) {
@@ -27,11 +25,7 @@ function handleError(error: unknown) {
     return apiFailure(error instanceof Error ? error.message : 'Unexpected error.', 500, error);
 }
 
-async function assertMember(
-    admin: AdminClient,
-    conversationId: string,
-    userId: string
-) {
+async function assertMember(admin: AdminClient, conversationId: string, userId: string) {
     const membership = await membersTable(admin)
         .select('id')
         .eq('conversation_id', conversationId)
@@ -113,7 +107,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
         const rows = ((messagesResult.data ?? []) as MessageRow[]).slice().reverse();
 
-        const senderIds = Array.from(new Set(rows.map((r) => r.sender_id).filter(Boolean))) as string[];
+        const senderIds = Array.from(
+            new Set(rows.map((r) => r.sender_id).filter((id): id is string => Boolean(id)))
+        );
+
         const replyIds = Array.from(
             new Set(rows.map((r) => r.reply_to_id).filter((id): id is string => Boolean(id)))
         );
@@ -234,6 +231,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         const senderNames = new Map([[senderId, senderResult.data.full_name]]);
         const repliedTo = new Map<string, MessageRow>();
 
+        // ✅ FIX QUAN TRỌNG: guard null sender_id
         if (body.replyToId) {
             const replyRowResult = await admin
                 .from('messages')
@@ -242,16 +240,25 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
                 .single();
 
             if (!replyRowResult.error && replyRowResult.data) {
-                repliedTo.set(body.replyToId, replyRowResult.data as MessageRow);
+                const reply = replyRowResult.data as MessageRow;
 
-                const replySenderResult = await admin
-                    .from('users')
-                    .select('id, full_name')
-                    .eq('id', replyRowResult.data.sender_id)
-                    .maybeSingle();
+                repliedTo.set(body.replyToId, reply);
 
-                if (!replySenderResult.error && replySenderResult.data) {
-                    senderNames.set(replySenderResult.data.id, replySenderResult.data.full_name);
+                const replySenderId = reply.sender_id;
+
+                if (replySenderId) {
+                    const replySenderResult = await admin
+                        .from('users')
+                        .select('id, full_name')
+                        .eq('id', replySenderId)
+                        .maybeSingle();
+
+                    if (!replySenderResult.error && replySenderResult.data) {
+                        senderNames.set(
+                            replySenderResult.data.id,
+                            replySenderResult.data.full_name
+                        );
+                    }
                 }
             }
         }
