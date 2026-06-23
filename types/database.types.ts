@@ -12,6 +12,10 @@ export type TrainingLinkStatus = 'in_progress' | 'completed';
 export type MentorRequestStatus = 'pending' | 'approved' | 'rejected';
 export type UserCourseProgressStatus = 'not_started' | 'in_progress' | 'completed';
 
+// ─── Chat module enums (migration: chat / messaging module) ───
+export type ConversationType = 'private' | 'group' | 'system';
+export type MessageType = 'text' | 'image' | 'file' | 'system';
+
 // ─── Role codes từ bảng roles (seed2) ───
 export type RoleCode = 'ADMIN' | 'MENTOR' | 'MEMBER';
 
@@ -359,109 +363,204 @@ export interface Database {
 
             // mentor_requests: migration v1 schema (no mentor_id/course_id FK columns)
             mentor_requests: {
-    Row: {
-        id: string;
-        requester_id: string | null;
-        mentor_id: string;
-        course_id: string;
-
-        status: MentorRequestStatus;
-
-        reviewed_by: string | null;
-        reviewed_at: string | null;
-
-        created_at: string;
-        updated_at: string;
-    };
-    Insert: {
-        id?: string;
-        requester_id?: string | null;
-        mentor_id: string;
-        course_id: string;
-
-        status?: MentorRequestStatus;
-
-        reviewed_by?: string | null;
-        reviewed_at?: string | null;
-
-        created_at?: string;
-        updated_at?: string;
-    };
-    Update: {
-        id?: string;
-        requester_id?: string | null;
-        mentor_id?: string;
-        course_id?: string;
-
-        status?: MentorRequestStatus;
-
-        reviewed_by?: string | null;
-        reviewed_at?: string | null;
-
-        updated_at?: string;
-    };
-    Relationships: [
-        {
-            foreignKeyName: 'mentor_requests_requester_id_fkey';
-            columns: ['requester_id'];
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-            isOneToOne: false;
-        },
-        {
-            foreignKeyName: 'mentor_requests_mentor_id_fkey';
-            columns: ['mentor_id'];
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-            isOneToOne: false;
-        },
-        {
-            foreignKeyName: 'mentor_requests_course_id_fkey';
-            columns: ['course_id'];
-            referencedRelation: 'courses';
-            referencedColumns: ['id'];
-            isOneToOne: false;
-        },
-        {
-            foreignKeyName: 'mentor_requests_reviewed_by_fkey';
-            columns: ['reviewed_by'];
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-            isOneToOne: false;
-        }
-    ];
-}
-
-            // conversations: migration v2 — user_a_id / user_b_id (không có course_id)
-            conversations: {
                 Row: {
                     id: string;
-                    user_a_id: string;
-                    user_b_id: string;
+                    requester_id: string | null;
+                    mentor_id: string;
+                    course_id: string;
+
+                    status: MentorRequestStatus;
+
+                    reviewed_by: string | null;
+                    reviewed_at: string | null;
+
                     created_at: string;
+                    updated_at: string;
                 };
                 Insert: {
                     id?: string;
-                    user_a_id: string;
-                    user_b_id: string;
+                    requester_id?: string | null;
+                    mentor_id: string;
+                    course_id: string;
+
+                    status?: MentorRequestStatus;
+
+                    reviewed_by?: string | null;
+                    reviewed_at?: string | null;
+
                     created_at?: string;
+                    updated_at?: string;
                 };
                 Update: {
                     id?: string;
-                    user_a_id?: string;
-                    user_b_id?: string;
+                    requester_id?: string | null;
+                    mentor_id?: string;
+                    course_id?: string;
+
+                    status?: MentorRequestStatus;
+
+                    reviewed_by?: string | null;
+                    reviewed_at?: string | null;
+
+                    updated_at?: string;
                 };
                 Relationships: [
                     {
-                        foreignKeyName: 'conversations_user_a_id_fkey';
-                        columns: ['user_a_id'];
+                        foreignKeyName: 'mentor_requests_requester_id_fkey';
+                        columns: ['requester_id'];
+                        referencedRelation: 'users';
+                        referencedColumns: ['id'];
+                        isOneToOne: false;
+                    },
+                    {
+                        foreignKeyName: 'mentor_requests_mentor_id_fkey';
+                        columns: ['mentor_id'];
+                        referencedRelation: 'users';
+                        referencedColumns: ['id'];
+                        isOneToOne: false;
+                    },
+                    {
+                        foreignKeyName: 'mentor_requests_course_id_fkey';
+                        columns: ['course_id'];
+                        referencedRelation: 'courses';
+                        referencedColumns: ['id'];
+                        isOneToOne: false;
+                    },
+                    {
+                        foreignKeyName: 'mentor_requests_reviewed_by_fkey';
+                        columns: ['reviewed_by'];
+                        referencedRelation: 'users';
+                        referencedColumns: ['id'];
+                        isOneToOne: false;
+                    },
+                ];
+            };
+
+            // ─────────────────────────────────────────────
+            // CHAT / MESSAGING MODULE
+            // (migration: drop + recreate conversations/messages,
+            // add conversation_members, notifications.conversation_id,
+            // user_presence, pinned_messages, message_reactions, typing_status)
+            // ─────────────────────────────────────────────
+
+            // conversations: type/title/avatar/course/training_link/last_message/is_archived
+            conversations: {
+                Row: {
+                    id: string;
+                    type: ConversationType;
+                    title: string | null;
+                    avatar_url: string | null;
+                    course_id: string | null;
+                    training_link_id: string | null;
+                    created_by: string | null;
+                    last_message_id: string | null;
+                    last_message_at: string | null;
+                    is_archived: boolean;
+                    created_at: string;
+                    updated_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    type?: ConversationType;
+                    title?: string | null;
+                    avatar_url?: string | null;
+                    course_id?: string | null;
+                    training_link_id?: string | null;
+                    created_by?: string | null;
+                    last_message_id?: string | null;
+                    last_message_at?: string | null;
+                    is_archived?: boolean;
+                    created_at?: string;
+                    updated_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    type?: ConversationType;
+                    title?: string | null;
+                    avatar_url?: string | null;
+                    course_id?: string | null;
+                    training_link_id?: string | null;
+                    created_by?: string | null;
+                    last_message_id?: string | null;
+                    last_message_at?: string | null;
+                    is_archived?: boolean;
+                    updated_at?: string;
+                };
+                Relationships: [
+                    {
+                        foreignKeyName: 'conversations_course_id_fkey';
+                        columns: ['course_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'courses';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'conversations_training_link_id_fkey';
+                        columns: ['training_link_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'training_links';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'conversations_created_by_fkey';
+                        columns: ['created_by'];
                         isOneToOne: false;
                         referencedRelation: 'users';
                         referencedColumns: ['id'];
                     },
                     {
-                        foreignKeyName: 'conversations_user_b_id_fkey';
-                        columns: ['user_b_id'];
+                        foreignKeyName: 'conversations_last_message_fk';
+                        columns: ['last_message_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'messages';
+                        referencedColumns: ['id'];
+                    },
+                ];
+            };
+
+            // conversation_members: membership + per-member read state
+            conversation_members: {
+                Row: {
+                    id: string;
+                    conversation_id: string;
+                    user_id: string;
+                    role: string;
+                    is_muted: boolean;
+                    is_pinned: boolean;
+                    last_read_at: string | null;
+                    joined_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    conversation_id: string;
+                    user_id: string;
+                    role?: string;
+                    is_muted?: boolean;
+                    is_pinned?: boolean;
+                    last_read_at?: string | null;
+                    joined_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    conversation_id?: string;
+                    user_id?: string;
+                    role?: string;
+                    is_muted?: boolean;
+                    is_pinned?: boolean;
+                    last_read_at?: string | null;
+                    joined_at?: string;
+                };
+                Relationships: [
+                    {
+                        foreignKeyName: 'conversation_members_conversation_id_fkey';
+                        columns: ['conversation_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'conversations';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'conversation_members_user_id_fkey';
+                        columns: ['user_id'];
                         isOneToOne: false;
                         referencedRelation: 'users';
                         referencedColumns: ['id'];
@@ -469,30 +568,51 @@ export interface Database {
                 ];
             };
 
-            // messages: migration v2 — is_read (không có email_sent)
+            // messages: type/content/attachment/reply/edit/soft-delete
             messages: {
                 Row: {
                     id: string;
                     conversation_id: string;
-                    sender_id: string;
-                    content: string;
-                    is_read: boolean;
+                    sender_id: string | null;
+                    type: MessageType;
+                    content: string | null;
+                    attachment_url: string | null;
+                    attachment_name: string | null;
+                    attachment_size: number | null;
+                    reply_to_id: string | null;
+                    is_edited: boolean;
+                    is_deleted: boolean;
                     created_at: string;
+                    updated_at: string;
                 };
                 Insert: {
                     id?: string;
                     conversation_id: string;
-                    sender_id: string;
-                    content: string;
-                    is_read?: boolean;
+                    sender_id?: string | null;
+                    type?: MessageType;
+                    content?: string | null;
+                    attachment_url?: string | null;
+                    attachment_name?: string | null;
+                    attachment_size?: number | null;
+                    reply_to_id?: string | null;
+                    is_edited?: boolean;
+                    is_deleted?: boolean;
                     created_at?: string;
+                    updated_at?: string;
                 };
                 Update: {
                     id?: string;
                     conversation_id?: string;
-                    sender_id?: string;
-                    content?: string;
-                    is_read?: boolean;
+                    sender_id?: string | null;
+                    type?: MessageType;
+                    content?: string | null;
+                    attachment_url?: string | null;
+                    attachment_name?: string | null;
+                    attachment_size?: number | null;
+                    reply_to_id?: string | null;
+                    is_edited?: boolean;
+                    is_deleted?: boolean;
+                    updated_at?: string;
                 };
                 Relationships: [
                     {
@@ -509,14 +629,22 @@ export interface Database {
                         referencedRelation: 'users';
                         referencedColumns: ['id'];
                     },
+                    {
+                        foreignKeyName: 'messages_reply_to_id_fkey';
+                        columns: ['reply_to_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'messages';
+                        referencedColumns: ['id'];
+                    },
                 ];
             };
 
-            // notifications: migration v2 — content nullable
+            // notifications: now optionally linked to a conversation
             notifications: {
                 Row: {
                     id: string;
                     user_id: string;
+                    conversation_id: string | null;
                     title: string;
                     content: string | null;
                     is_read: boolean;
@@ -525,6 +653,7 @@ export interface Database {
                 Insert: {
                     id?: string;
                     user_id: string;
+                    conversation_id?: string | null;
                     title: string;
                     content?: string | null;
                     is_read?: boolean;
@@ -533,6 +662,7 @@ export interface Database {
                 Update: {
                     id?: string;
                     user_id?: string;
+                    conversation_id?: string | null;
                     title?: string;
                     content?: string | null;
                     is_read?: boolean;
@@ -540,6 +670,169 @@ export interface Database {
                 Relationships: [
                     {
                         foreignKeyName: 'notifications_user_id_fkey';
+                        columns: ['user_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'users';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'notifications_conversation_id_fkey';
+                        columns: ['conversation_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'conversations';
+                        referencedColumns: ['id'];
+                    },
+                ];
+            };
+
+            // user_presence: online/offline + last seen
+            user_presence: {
+                Row: {
+                    user_id: string;
+                    is_online: boolean;
+                    last_seen_at: string | null;
+                    updated_at: string;
+                };
+                Insert: {
+                    user_id: string;
+                    is_online?: boolean;
+                    last_seen_at?: string | null;
+                    updated_at?: string;
+                };
+                Update: {
+                    user_id?: string;
+                    is_online?: boolean;
+                    last_seen_at?: string | null;
+                    updated_at?: string;
+                };
+                Relationships: [
+                    {
+                        foreignKeyName: 'user_presence_user_id_fkey';
+                        columns: ['user_id'];
+                        isOneToOne: true;
+                        referencedRelation: 'users';
+                        referencedColumns: ['id'];
+                    },
+                ];
+            };
+
+            // pinned_messages: per-conversation pinned message list
+            pinned_messages: {
+                Row: {
+                    id: string;
+                    conversation_id: string;
+                    message_id: string;
+                    pinned_by: string | null;
+                    created_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    conversation_id: string;
+                    message_id: string;
+                    pinned_by?: string | null;
+                    created_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    conversation_id?: string;
+                    message_id?: string;
+                    pinned_by?: string | null;
+                };
+                Relationships: [
+                    {
+                        foreignKeyName: 'pinned_messages_conversation_id_fkey';
+                        columns: ['conversation_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'conversations';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'pinned_messages_message_id_fkey';
+                        columns: ['message_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'messages';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'pinned_messages_pinned_by_fkey';
+                        columns: ['pinned_by'];
+                        isOneToOne: false;
+                        referencedRelation: 'users';
+                        referencedColumns: ['id'];
+                    },
+                ];
+            };
+
+            // message_reactions: emoji reactions per (message, user, emoji)
+            message_reactions: {
+                Row: {
+                    id: string;
+                    message_id: string;
+                    user_id: string;
+                    emoji: string;
+                    created_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    message_id: string;
+                    user_id: string;
+                    emoji: string;
+                    created_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    message_id?: string;
+                    user_id?: string;
+                    emoji?: string;
+                };
+                Relationships: [
+                    {
+                        foreignKeyName: 'message_reactions_message_id_fkey';
+                        columns: ['message_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'messages';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'message_reactions_user_id_fkey';
+                        columns: ['user_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'users';
+                        referencedColumns: ['id'];
+                    },
+                ];
+            };
+
+            // typing_status: composite PK (conversation_id, user_id)
+            typing_status: {
+                Row: {
+                    conversation_id: string;
+                    user_id: string;
+                    is_typing: boolean;
+                    updated_at: string;
+                };
+                Insert: {
+                    conversation_id: string;
+                    user_id: string;
+                    is_typing?: boolean;
+                    updated_at?: string;
+                };
+                Update: {
+                    conversation_id?: string;
+                    user_id?: string;
+                    is_typing?: boolean;
+                    updated_at?: string;
+                };
+                Relationships: [
+                    {
+                        foreignKeyName: 'typing_status_conversation_id_fkey';
+                        columns: ['conversation_id'];
+                        isOneToOne: false;
+                        referencedRelation: 'conversations';
+                        referencedColumns: ['id'];
+                    },
+                    {
+                        foreignKeyName: 'typing_status_user_id_fkey';
                         columns: ['user_id'];
                         isOneToOne: false;
                         referencedRelation: 'users';
@@ -664,6 +957,8 @@ export interface Database {
             training_link_status: TrainingLinkStatus;
             mentor_request_status: MentorRequestStatus;
             user_course_progress_status: UserCourseProgressStatus;
+            conversation_type: ConversationType;
+            message_type: MessageType;
         };
         CompositeTypes: Record<string, never>;
     };
