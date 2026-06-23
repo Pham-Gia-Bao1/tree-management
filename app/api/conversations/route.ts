@@ -1,3 +1,4 @@
+// PATH: /api/conversations
 import { NextRequest } from 'next/server';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
