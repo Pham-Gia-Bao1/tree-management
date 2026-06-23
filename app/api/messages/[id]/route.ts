@@ -1,8 +1,13 @@
+// PATH: /api/messages/[id]
 import { NextRequest } from 'next/server';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
 import { readJsonBody, requireString } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+
+type RouteContext = {
+    params: Promise<{ id: string }>;
+};
 
 function handleError(error: unknown) {
     if (error instanceof ApiError) return apiFailure(error.message, error.status, error.details);
@@ -18,10 +23,11 @@ async function loadOwnedMessage(admin: ReturnType<typeof getSupabaseAdminClient>
     return result.data;
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: RouteContext) {
     try {
+        const { id } = await params;
         const admin = getSupabaseAdminClient();
-        const messageId = requireString(params.id, 'id');
+        const messageId = requireString(id, 'id');
 
         const body = await readJsonBody<{ userId?: string; content?: string }>(request);
         const userId = requireString(body.userId, 'userId');
@@ -43,10 +49,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
     try {
+        const { id } = await params;
         const admin = getSupabaseAdminClient();
-        const messageId = requireString(params.id, 'id');
+        const messageId = requireString(id, 'id');
 
         const searchParams = new URL(request.url).searchParams;
         const userId = requireString(searchParams.get('userId'), 'userId');
