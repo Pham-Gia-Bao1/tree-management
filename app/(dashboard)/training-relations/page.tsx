@@ -1,750 +1,866 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Breadcrumb,
-    Card,
-    Typography,
-    Button,
-    Input,
-    Space,
-    Form,
-    Select,
-    Popconfirm,
-    App,
-    Drawer,
-    Table,
-    Tag,
+  App,
+  Avatar,
+  Breadcrumb,
+  Button,
+  Card,
+  Descriptions,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  Popconfirm,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
 } from 'antd';
-
 import {
-    EditOutlined,
-    DeleteOutlined,
-    PlusOutlined,
-} from '@ant-design/icons';
-
-
-import type {
-    TrainingRelationRecord,
-    TrainingRelationInput,
-} from '@/types/training-link.types';
-
-import type {
-    CourseRecord,
-} from '@/types/course.types';
-
-import type {
-    UserRecord,
-} from '@/types/user.types';
-import { ColumnsType } from 'antd/es/table';
-import { renderText } from '@/utils/renderText';
-import DataPage from '@/components/common/DataPage';
-
-
+  BookOpen,
+  Eye,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  User,
+  Users,
+} from 'lucide-react';
+import type { ColumnsType } from 'antd/es/table';
 
 const { Title, Text } = Typography;
 
-
-
-type RelationRow =
-    TrainingRelationRecord & {
-        key:string;
-    };
-
-
-
-
-export default function TrainingRelations(){
-
-const [loading,setLoading] =
-    useState(false);
-    const {message} =
-        App.useApp();
-
-
-    const [search,setSearch] =
-        useState('');
-
-
-    const [open,setOpen] =
-        useState(false);
-
-
-    const [editing,setEditing] =
-        useState<RelationRow|null>(null);
-
-
-    const [relations,setRelations] =
-        useState<RelationRow[]>([]);
-
-
-    const [courses,setCourses] =
-        useState<CourseRecord[]>([]);
-
-
-    const [users,setUsers] =
-        useState<UserRecord[]>([]);
-
-
-    const [form] =
-        Form.useForm();
-
-
-
-
-    const loadData = async()=>{
-        try{
-        setLoading(true);
-
-
-            const [
-                relationRes,
-                courseRes,
-                userRes,
-
-            ] = await Promise.all([
-
-                fetch('/api/training-relations'),
-
-                fetch('/api/courses'),
-
-                fetch('/api/users'),
-
-            ]);
-
-
-
-            const [
-                relationData,
-                courseData,
-                userData,
-
-            ] = await Promise.all([
-
-                relationRes.json(),
-
-                courseRes.json(),
-
-                userRes.json(),
-
-            ]);
-
-
-
-            setRelations(
-
-                (relationData.data ?? [])
-                .map(
-                    (item:TrainingRelationRecord)=>({
-                        ...item,
-                        key:item.id
-                    })
-                )
-
-            );
-
-
-            setCourses(
-                courseData.data ?? []
-            );
-
-
-            setUsers(
-                userData.data ?? []
-            );
-
-
-        }catch{
-
-            message.error(
-                'Load data failed'
-            );
-
-        } finally{
-
-            setLoading(false);
-        }
-
-    };
-
-
-
-    useEffect(()=>{
-
-        loadData();
-
-    },[]);
-
-
-
-
-    const mentorOptions =
-        useMemo(()=>{
-
-
-            return users
-
-            .filter(user=>
-
-                user.roles?.includes('MENTOR')
-                ||
-                user.roles?.includes('ADMIN')
-
-            )
-
-            .map(user=>({
-
-                value:user.id,
-
-                label:user.fullName,
-
-            }));
-
-
-        },[users]);
-
-
-
-
-
-    const discipleOptions =
-        useMemo(()=>{
-
-
-            return users.map(user=>({
-
-                value:user.id,
-
-                label:user.fullName,
-
-            }));
-
-
-        },[users]);
-
-
-
-
-    const courseOptions =
-        useMemo(()=>{
-
-
-            return courses.map(course=>({
-
-                value:course.id,
-
-                label:course.name,
-
-            }));
-
-
-        },[courses]);
-
-
-
-
-
-
-    const filteredData =
-        relations.filter(item=>{
-
-
-            if(!search)
-                return true;
-
-
-            const keyword =
-                search.toLowerCase();
-
-
-
-            return [
-
-                item.mentorName,
-
-                item.discipleName,
-
-                item.courseName,
-
-                item.branchName,
-
-            ]
-
-            .filter(Boolean)
-
-            .some(value=>
-
-                String(value)
-                .toLowerCase()
-                .includes(keyword)
-
-            );
-
-
-        });
-
-
-
-
-
-
-
-    const openCreate = ()=>{
-
-        setEditing(null);
-
-        form.resetFields();
-
-        setOpen(true);
-
-    };
-
-
-
-
-
-    const openEdit = (
-        record:RelationRow
-    )=>{
-
-
-        setEditing(record);
-
-
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Status = 'in_progress' | 'completed';
+
+interface TrainingRelationRecord {
+  id: string;
+  courseId: string;
+  courseName?: string;
+  mentorId: string;
+  mentorName?: string;
+  discipleId: string;
+  discipleName?: string;
+  branchName?: string;
+  startDate: string;
+  endDate?: string | null;
+  status: Status;
+  notes?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface CourseRecord {
+  id: string;
+  name: string;
+}
+
+interface UserRecord {
+  id: string;
+  fullName: string;
+  roles?: string[];
+}
+
+type RelationRow = TrainingRelationRecord & { key: string };
+
+type DrawerMode = 'create' | 'edit' | 'view';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const statusConfig: Record<Status, { color: string; label: string }> = {
+  in_progress: { color: 'blue', label: 'In Progress' },
+  completed: { color: 'green', label: 'Completed' },
+};
+
+function StatusTag({ status }: { status: string }) {
+  const cfg = statusConfig[status as Status];
+  if (!cfg) return <Tag>{status}</Tag>;
+  return <Tag color={cfg.color}>{cfg.label}</Tag>;
+}
+
+function avatarLetter(name?: string | null) {
+  return name?.trim()?.[0]?.toUpperCase() ?? '?';
+}
+
+function formatDate(v?: string | null) {
+  if (!v) return '—';
+  return v.slice(0, 10);
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function TrainingRelationsPage() {
+  const { message } = App.useApp();
+  const [form] = Form.useForm();
+
+  // ── Data state ──
+  const [data, setData] = useState<RelationRow[]>([]);
+  const [courses, setCourses] = useState<CourseRecord[]>([]);
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // ── Drawer state ──
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<DrawerMode>('create');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedRelation, setSelectedRelation] =
+    useState<TrainingRelationRecord | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+
+  // ── Filter state ──
+  const [search, setSearch] = useState('');
+  const [mentorFilter, setMentorFilter] = useState<string | null>(null);
+  const [discipleFilter, setDiscipleFilter] = useState<string | null>(null);
+  const [courseFilter, setCourseFilter] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+
+  const loadRelations = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/training-relations');
+      const json = await res.json();
+      setData(
+        (json.data ?? []).map((r: TrainingRelationRecord) => ({
+          ...r,
+          key: r.id,
+        }))
+      );
+    } catch {
+      message.error('Failed to load training relations.');
+    } finally {
+      setLoading(false);
+    }
+  }, [message]);
+
+  const loadSupportingData = useCallback(async () => {
+    try {
+      const [courseRes, userRes] = await Promise.all([
+        fetch('/api/courses'),
+        fetch('/api/users'),
+      ]);
+      const [courseJson, userJson] = await Promise.all([
+        courseRes.json(),
+        userRes.json(),
+      ]);
+      setCourses(courseJson.data ?? []);
+      setUsers(userJson.data ?? []);
+    } catch {
+      message.error('Failed to load supporting data.');
+    }
+  }, [message]);
+
+  useEffect(() => {
+    void loadRelations();
+    void loadSupportingData();
+  }, [loadRelations, loadSupportingData]);
+
+  const loadRelationDetail = useCallback(
+    async (id: string) => {
+      setDrawerLoading(true);
+      try {
+        const res = await fetch(`/api/training-relations/${id}`);
+        const json = await res.json();
+        return json.data as TrainingRelationRecord;
+      } catch {
+        message.error('Failed to load relation details.');
+        return null;
+      } finally {
+        setDrawerLoading(false);
+      }
+    },
+    [message]
+  );
+
+  // ── Options ───────────────────────────────────────────────────────────────
+
+  const mentorOptions = useMemo(
+    () =>
+      users
+        .filter(
+          (u) => u.roles?.includes('MENTOR') || u.roles?.includes('ADMIN')
+        )
+        .map((u) => ({ value: u.id, label: u.fullName })),
+    [users]
+  );
+
+  const discipleOptions = useMemo(
+    () => users.map((u) => ({ value: u.id, label: u.fullName })),
+    [users]
+  );
+
+  const courseOptions = useMemo(
+    () => courses.map((c) => ({ value: c.id, label: c.name })),
+    [courses]
+  );
+
+  // ── Filtered data ─────────────────────────────────────────────────────────
+
+  const filteredData = useMemo(() => {
+    return data.filter((item) => {
+      if (mentorFilter && item.mentorId !== mentorFilter) return false;
+      if (discipleFilter && item.discipleId !== discipleFilter) return false;
+      if (courseFilter && item.courseId !== courseFilter) return false;
+      if (search) {
+        const kw = search.toLowerCase();
+        const match = [
+          item.mentorName,
+          item.discipleName,
+          item.courseName,
+          item.branchName,
+        ]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(kw));
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [data, search, mentorFilter, discipleFilter, courseFilter]);
+
+  // ── Drawer handlers ───────────────────────────────────────────────────────
+
+  const closeDrawer = useCallback(() => {
+    setDrawerOpen(false);
+    setEditingId(null);
+    setSelectedRelation(null);
+    form.resetFields();
+  }, [form]);
+
+  const openCreateDrawer = useCallback(() => {
+    setDrawerMode('create');
+    setEditingId(null);
+    setSelectedRelation(null);
+    form.resetFields();
+    setDrawerOpen(true);
+  }, [form]);
+
+  const openEditDrawer = useCallback(
+    async (id: string) => {
+      setDrawerMode('edit');
+      setEditingId(id);
+      setDrawerOpen(true);
+      const detail = await loadRelationDetail(id);
+      if (detail) {
+        setSelectedRelation(detail);
         form.setFieldsValue({
-
-            courseId:
-                record.courseId,
-
-
-            mentorId:
-                record.mentorId,
-
-
-            discipleId:
-                record.discipleId,
-
-
-            startDate:
-                record.startDate,
-
-
-            endDate:
-                record.endDate,
-
-
-            notes:
-                record.notes,
-
+          courseId: detail.courseId,
+          mentorId: detail.mentorId,
+          discipleId: detail.discipleId,
+          startDate: detail.startDate?.slice(0, 10),
+          endDate: detail.endDate?.slice(0, 10) ?? '',
+          status: detail.status,
+          notes: detail.notes ?? '',
         });
-
-
-        setOpen(true);
-
-    };
-
-
-
-
-
-
-
-    const handleSave = async()=>{
-
-
-        try{
-
-
-            const values =
-                await form.validateFields();
-
-
-
-            const payload:TrainingRelationInput = {
-
-
-                courseId:
-                    values.courseId,
-
-
-                mentorId:
-                    values.mentorId,
-
-
-                discipleId:
-                    values.discipleId,
-
-
-                startDate:
-                    values.startDate,
-
-
-                endDate:
-                    values.endDate ?? null,
-
-
-                status:
-                    'in_progress',
-
-
-                notes:
-                    values.notes ?? null,
-
-
-            };
-
-
-
-            const url =
-                editing
-
-                ? `/api/training-relations/${editing.id}`
-
-                : '/api/training-relations';
-
-
-
-            const method =
-                editing
-                ? 'PUT'
-                : 'POST';
-
-
-
-
-            await fetch(
-                url,
-                {
-                    method,
-
-                    headers:{
-                        'Content-Type':
-                            'application/json'
-                    },
-
-                    body:
-                        JSON.stringify(payload)
-                }
-            );
-
-
-
-            message.success(
-                editing
-                ? 'Updated'
-                : 'Created'
-            );
-
-
-
-            setOpen(false);
-
-            loadData();
-
-
-
-        }catch{
-
-        }
-
-
-    };
-
-
-
-
-
-
-
-
-    const handleDelete = async(
-        id:string
-    )=>{
-
-
-        await fetch(
-            `/api/training-relations/${id}`,
-            {
-                method:'DELETE'
-            }
-        );
-
-
-        message.success(
-            'Deleted'
-        );
-
-
-        loadData();
-
-    };
-
-
-const columns: ColumnsType<RelationRow> = [
-    {
-        title: 'Mentor',
-        dataIndex: 'mentorName',
-        width: 220,
-        ellipsis: true,
-        render: renderText,
+      }
     },
+    [form, loadRelationDetail]
+  );
 
-    {
-        title: 'Disciple',
-        dataIndex: 'discipleName',
-        width: 220,
-        ellipsis: true,
-        render: renderText,
+  const openViewDrawer = useCallback(
+    async (id: string) => {
+      setDrawerMode('view');
+      setEditingId(id);
+      setDrawerOpen(true);
+      const detail = await loadRelationDetail(id);
+      if (detail) setSelectedRelation(detail);
     },
+    [loadRelationDetail]
+  );
 
-    {
-        title: 'Course',
-        dataIndex: 'courseName',
-        width: 260,
-        ellipsis: true,
-        render: renderText,
+  // ── CRUD ──────────────────────────────────────────────────────────────────
+
+  const handleCreate = useCallback(async () => {
+    const values = await form.validateFields();
+    setSubmitLoading(true);
+    try {
+      const res = await fetch('/api/training-relations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseId: values.courseId,
+          mentorId: values.mentorId,
+          discipleId: values.discipleId,
+          startDate: values.startDate,
+          endDate: values.endDate || null,
+          status: values.status ?? 'in_progress',
+          notes: values.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      message.success('Training relation created.');
+      closeDrawer();
+      void loadRelations();
+    } catch {
+      message.error('Failed to create relation.');
+    } finally {
+      setSubmitLoading(false);
+    }
+  }, [form, message, closeDrawer, loadRelations]);
+
+  const handleUpdate = useCallback(async () => {
+    if (!editingId) return;
+    const values = await form.validateFields();
+    setSubmitLoading(true);
+    try {
+      const res = await fetch(`/api/training-relations/${editingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseId: values.courseId,
+          mentorId: values.mentorId,
+          discipleId: values.discipleId,
+          startDate: values.startDate,
+          endDate: values.endDate || null,
+          status: values.status,
+          notes: values.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      message.success('Training relation updated.');
+      closeDrawer();
+      void loadRelations();
+    } catch {
+      message.error('Failed to update relation.');
+    } finally {
+      setSubmitLoading(false);
+    }
+  }, [editingId, form, message, closeDrawer, loadRelations]);
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      setDeleteLoadingId(id);
+      try {
+        const res = await fetch(`/api/training-relations/${id}`, {
+          method: 'DELETE',
+        });
+        if (!res.ok) throw new Error();
+        message.success('Relation deleted.');
+        void loadRelations();
+      } catch {
+        message.error('Failed to delete relation.');
+      } finally {
+        setDeleteLoadingId(null);
+      }
     },
+    [message, loadRelations]
+  );
 
+  const handleSubmit = useCallback(() => {
+    if (drawerMode === 'create') return handleCreate();
+    if (drawerMode === 'edit') return handleUpdate();
+  }, [drawerMode, handleCreate, handleUpdate]);
+
+  // ── Debounced search ──────────────────────────────────────────────────────
+
+  const onSearchChange = (value: string) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setSearch(value), 500);
+  };
+
+  // ── Columns ───────────────────────────────────────────────────────────────
+
+  const columns: ColumnsType<RelationRow> = [
     {
-        title: 'Branch',
-        dataIndex: 'branchName',
-        width: 180,
-        ellipsis: true,
-        render: renderText,
+      title: 'Course',
+      dataIndex: 'courseName',
+      ellipsis: true,
+      render: (v: string) => v ?? '—',
     },
-
     {
-        title: 'Start Date',
-        dataIndex: 'startDate',
-        width: 140,
-        align: 'center',
+      title: 'Mentor',
+      dataIndex: 'mentorName',
+      ellipsis: true,
+      render: (v: string) => (
+        <Space size={8}>
+          <Avatar size={24} style={{ background: '#4F46E5', fontSize: 11 }}>
+            {avatarLetter(v)}
+          </Avatar>
+          <span>{v ?? '—'}</span>
+        </Space>
+      ),
     },
-
     {
-        title: 'End Date',
-        dataIndex: 'endDate',
-        width: 140,
-        align: 'center',
-        render: (v: string | null) => v ?? '-',
+      title: 'Disciple',
+      dataIndex: 'discipleName',
+      ellipsis: true,
+      render: (v: string) => (
+        <Space size={8}>
+          <Avatar size={24} style={{ background: '#0EA5E9', fontSize: 11 }}>
+            {avatarLetter(v)}
+          </Avatar>
+          <span>{v ?? '—'}</span>
+        </Space>
+      ),
     },
-
     {
-        title: 'Status',
-        dataIndex: 'status',
-        width: 140,
-        align: 'center',
-        render: (status: string) => (
-            <Tag
-                color={
-                    status === 'COMPLETED'
-                        ? 'green'
-                        : status === 'IN_PROGRESS'
-                        ? 'blue'
-                        : 'default'
-                }
-            >
-                {status}
-            </Tag>
-        ),
+      title: 'Branch',
+      dataIndex: 'branchName',
+      ellipsis: true,
+      render: (v: string) => v ?? '—',
     },
-
     {
-        title: 'Actions',
-        width: 120,
-        fixed: 'right',
-        align: 'center',
-        render: (_: unknown, row: RelationRow) => (
-            <Space size={4}>
-                <Button
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => openEdit(row)}
-                />
-
-                <Popconfirm
-                    title="Delete relation?"
-                    onConfirm={() => handleDelete(row.id)}
-                >
-                    <Button
-                        danger
-                        size="small"
-                        icon={<DeleteOutlined />}
-                    />
-                </Popconfirm>
-            </Space>
-        ),
+      title: 'Start Date',
+      dataIndex: 'startDate',
+      width: 130,
+      align: 'center',
+      render: formatDate,
     },
-];
-    return (
+    {
+      title: 'End Date',
+      dataIndex: 'endDate',
+      width: 130,
+      align: 'center',
+      render: formatDate,
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      width: 130,
+      align: 'center',
+      render: (s: string) => <StatusTag status={s} />,
+    },
+    {
+      title: 'Notes',
+      dataIndex: 'notes',
+      ellipsis: true,
+      render: (v: string | null) => v ?? '—',
+    },
+    {
+      title: 'Actions',
+      width: 120,
+      fixed: 'right',
+      align: 'center',
+      render: (_: unknown, row: RelationRow) => (
+        <Space size={4}>
+          <Button
+            size="small"
+            icon={<Eye size={13} />}
+            onClick={() => openViewDrawer(row.id)}
+            title="View"
+          />
+          <Button
+            size="small"
+            icon={<Pencil size={13} />}
+            onClick={() => openEditDrawer(row.id)}
+            title="Edit"
+          />
+          <Popconfirm
+            title="Are you sure to delete this relation?"
+            onConfirm={() => handleDelete(row.id)}
+            okText="Yes, delete"
+            cancelText="Cancel"
+          >
+            <Button
+              danger
+              size="small"
+              loading={deleteLoadingId === row.id}
+              icon={<Trash2 size={13} />}
+              title="Delete"
+            />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
-        <div className="space-y-4">
+  // ── Detail view ───────────────────────────────────────────────────────────
 
-
-
-
-
-
-
-            <DataPage<RelationRow>
-    title="Training Relations"
-    subtitle="Manage mentor-disciple training relationships"
-    columns={columns}
-    dataSource={filteredData}
-    searchable
-    loading={loading}
-    // onSearch={(keyword) => {
-    //     setKeyword(keyword);
-    // }}
-    // onRefresh={() => {
-    //     void loadRelations();
-    // }}
-/>
-
-
-
-
-
-
-
-
-            <Drawer
-
-                open={open}
-
-                size="large"
-
-                title={
-                    editing
-                    ? 'Edit'
-                    : 'Create'
-                }
-
-                onClose={()=>{
-                    setOpen(false)
-                }}
-
-
-                footer={
-
-                    <Button
-                        type="primary"
-                        onClick={handleSave}
-                    >
-                        Save
-                    </Button>
-
-                }
-
-            >
-
-
-                <Form
-                    form={form}
-                    layout="vertical"
-                >
-
-
-                    <Form.Item
-                        label="Course"
-                        name="courseId"
-                        rules={[
-                            {
-                                required:true
-                            }
-                        ]}
-                    >
-
-                        <Select
-                            options={courseOptions}
-                        />
-
-                    </Form.Item>
-
-
-
-                    <Form.Item
-                        label="Mentor"
-                        name="mentorId"
-                        rules={[
-                            {
-                                required:true
-                            }
-                        ]}
-                    >
-
-                        <Select
-                            options={mentorOptions}
-                        />
-
-                    </Form.Item>
-
-
-
-                    <Form.Item
-                        label="Disciple"
-                        name="discipleId"
-                        rules={[
-                            {
-                                required:true
-                            }
-                        ]}
-                    >
-
-                        <Select
-                            options={discipleOptions}
-                        />
-
-                    </Form.Item>
-
-
-
-
-                    <Form.Item
-                        label="Start Date"
-                        name="startDate"
-                        rules={[
-                            {
-                                required:true
-                            }
-                        ]}
-                    >
-
-                        <Input placeholder="YYYY-MM-DD"/>
-
-                    </Form.Item>
-
-
-
-                    <Form.Item
-                        label="End Date"
-                        name="endDate"
-                    >
-
-                        <Input placeholder="YYYY-MM-DD"/>
-
-                    </Form.Item>
-
-
-
-                    <Form.Item
-                        label="Notes"
-                        name="notes"
-                    >
-
-                        <Input.TextArea rows={4}/>
-
-                    </Form.Item>
-
-
-                </Form>
-
-
-            </Drawer>
-
-
+  const DetailView = () => {
+    if (drawerLoading)
+      return (
+        <div className="flex justify-center items-center h-64">
+          <Spin size="large" />
         </div>
+      );
+    if (!selectedRelation)
+      return <Empty description="No data" className="mt-16" />;
 
+    const r = selectedRelation;
+
+    return (
+      <div className="space-y-4">
+        {/* Relation Information */}
+        <Card
+          size="small"
+          title={
+            <Space>
+              <BookOpen size={15} className="text-indigo-500" />
+              <span>Relation Information</span>
+            </Space>
+          }
+          className="rounded-xl shadow-sm"
+        >
+          <Descriptions column={1} size="small" labelStyle={{ color: '#6B7280' }}>
+            <Descriptions.Item label="Status">
+              <StatusTag status={r.status} />
+            </Descriptions.Item>
+            <Descriptions.Item label="Start Date">
+              {formatDate(r.startDate)}
+            </Descriptions.Item>
+            <Descriptions.Item label="End Date">
+              {formatDate(r.endDate)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Branch">
+              {r.branchName ?? '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Notes">
+              {r.notes ?? '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Created">
+              {r.createdAt ? formatDate(r.createdAt) : '—'}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+
+        {/* Mentor Information */}
+        <Card
+          size="small"
+          title={
+            <Space>
+              <User size={15} className="text-indigo-500" />
+              <span>Mentor Information</span>
+            </Space>
+          }
+          className="rounded-xl shadow-sm"
+        >
+          <Space size={12}>
+            <Avatar size={48} style={{ background: '#4F46E5', fontSize: 20 }}>
+              {avatarLetter(r.mentorName)}
+            </Avatar>
+            <div>
+              <Text strong>{r.mentorName ?? '—'}</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                ID: {r.mentorId}
+              </Text>
+            </div>
+          </Space>
+        </Card>
+
+        {/* Disciple Information */}
+        <Card
+          size="small"
+          title={
+            <Space>
+              <Users size={15} className="text-sky-500" />
+              <span>Disciple Information</span>
+            </Space>
+          }
+          className="rounded-xl shadow-sm"
+        >
+          <Space size={12}>
+            <Avatar size={48} style={{ background: '#0EA5E9', fontSize: 20 }}>
+              {avatarLetter(r.discipleName)}
+            </Avatar>
+            <div>
+              <Text strong>{r.discipleName ?? '—'}</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                ID: {r.discipleId}
+              </Text>
+            </div>
+          </Space>
+        </Card>
+
+        {/* Course Information */}
+        <Card
+          size="small"
+          title={
+            <Space>
+              <BookOpen size={15} className="text-emerald-500" />
+              <span>Course Information</span>
+            </Space>
+          }
+          className="rounded-xl shadow-sm"
+        >
+          <Descriptions column={1} size="small" labelStyle={{ color: '#6B7280' }}>
+            <Descriptions.Item label="Course Name">
+              {r.courseName ?? '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Course ID">
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {r.courseId}
+              </Text>
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+      </div>
     );
+  };
 
+  // ── Drawer title & footer ─────────────────────────────────────────────────
+
+  const drawerTitle =
+    drawerMode === 'create'
+      ? 'Create Training Relation'
+      : drawerMode === 'edit'
+      ? 'Edit Training Relation'
+      : 'Training Relation Detail';
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div
+        className="sticky top-0 z-20 bg-white border-b border-gray-100 px-6 py-4"
+        style={{ boxShadow: '0 1px 4px rgba(0,0,0,.06)' }}
+      >
+        <Breadcrumb
+          items={[{ title: 'Home' }, { title: 'Training Relations' }]}
+          className="mb-1"
+        />
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <Title level={4} style={{ margin: 0 }}>
+              Training Relations
+            </Title>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              Manage mentor–disciple training relationships
+            </Text>
+          </div>
+          <Button
+            type="primary"
+            icon={<Plus size={15} />}
+            onClick={openCreateDrawer}
+            style={{ borderRadius: 8 }}
+          >
+            Create Relation
+          </Button>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="sticky top-[73px] z-10 bg-white border-b border-gray-100 px-6 py-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          <Input.Search
+            placeholder="Search by mentor, disciple, course, branch…"
+            allowClear
+            onChange={(e) => onSearchChange(e.target.value)}
+            style={{ width: 300, borderRadius: 8 }}
+          />
+          <Select
+            placeholder="Filter by Mentor"
+            allowClear
+            options={mentorOptions}
+            onChange={setMentorFilter}
+            style={{ width: 200 }}
+          />
+          <Select
+            placeholder="Filter by Disciple"
+            allowClear
+            options={discipleOptions}
+            onChange={setDiscipleFilter}
+            style={{ width: 200 }}
+          />
+          <Select
+            placeholder="Filter by Course"
+            allowClear
+            options={courseOptions}
+            onChange={setCourseFilter}
+            style={{ width: 200 }}
+          />
+          <Button
+            icon={<RefreshCw size={14} />}
+            onClick={() => void loadRelations()}
+            loading={loading}
+          >
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="px-6 py-5">
+        <Card className="rounded-xl shadow-sm" bodyStyle={{ padding: 0 }}>
+          <Table<RelationRow>
+            columns={columns}
+            dataSource={filteredData}
+            loading={loading}
+            size="middle"
+            scroll={{ x: 1200, y: 'calc(100vh - 300px)' }}
+            sticky
+            pagination={{
+              pageSize: 15,
+              showSizeChanger: true,
+              showTotal: (total) => `${total} relations`,
+            }}
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="No training relations found"
+                  className="py-12"
+                />
+              ),
+            }}
+          />
+        </Card>
+      </div>
+
+      {/* Drawer */}
+      <Drawer
+        open={drawerOpen}
+        size="large"
+        title={drawerTitle}
+        onClose={closeDrawer}
+        destroyOnClose
+        footer={
+          drawerMode !== 'view' ? (
+            <div className="flex justify-end gap-2">
+              <Button onClick={closeDrawer}>Cancel</Button>
+              <Button
+                type="primary"
+                loading={submitLoading}
+                onClick={handleSubmit}
+              >
+                {drawerMode === 'create' ? 'Create' : 'Save Changes'}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button onClick={closeDrawer}>Close</Button>
+            </div>
+          )
+        }
+      >
+        {drawerMode === 'view' ? (
+          <DetailView />
+        ) : (
+          <Spin spinning={drawerLoading}>
+            <Form form={form} layout="vertical" requiredMark="optional">
+              <Form.Item
+                label="Course"
+                name="courseId"
+                rules={[{ required: true, message: 'Course is required.' }]}
+              >
+                <Select
+                  options={courseOptions}
+                  placeholder="Select course"
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="Mentor"
+                name="mentorId"
+                rules={[
+                  { required: true, message: 'Mentor is required.' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || value !== getFieldValue('discipleId')) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error('Mentor and disciple must be different people.')
+                      );
+                    },
+                  }),
+                ]}
+              >
+                <Select
+                  options={mentorOptions}
+                  placeholder="Select mentor"
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="Disciple"
+                name="discipleId"
+                rules={[
+                  { required: true, message: 'Disciple is required.' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || value !== getFieldValue('mentorId')) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error('Mentor and disciple must be different people.')
+                      );
+                    },
+                  }),
+                ]}
+              >
+                <Select
+                  options={discipleOptions}
+                  placeholder="Select disciple"
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="Start Date"
+                name="startDate"
+                rules={[
+                  { required: true, message: 'Start date is required.' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const end = getFieldValue('endDate');
+                      if (!value || !end || value <= end) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error('Start date must be on or before end date.')
+                      );
+                    },
+                  }),
+                ]}
+              >
+                <Input type="date" />
+              </Form.Item>
+
+              <Form.Item
+                label="End Date"
+                name="endDate"
+                rules={[
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const start = getFieldValue('startDate');
+                      if (!value || !start || start <= value) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error('End date must be on or after start date.')
+                      );
+                    },
+                  }),
+                ]}
+              >
+                <Input type="date" />
+              </Form.Item>
+
+              <Form.Item label="Status" name="status" initialValue="in_progress">
+                <Select
+                  options={[
+                    { value: 'in_progress', label: 'In Progress' },
+                    { value: 'completed', label: 'Completed' },
+                  ]}
+                />
+              </Form.Item>
+
+              <Form.Item label="Notes" name="notes">
+                <Input.TextArea
+                  rows={4}
+                  placeholder="Optional notes about this relation…"
+                />
+              </Form.Item>
+            </Form>
+          </Spin>
+        )}
+      </Drawer>
+    </div>
+  );
 }
