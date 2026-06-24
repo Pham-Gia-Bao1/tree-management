@@ -9,6 +9,7 @@ import {
     optionalString,
 } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { Database } from '@/types/database';
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -16,33 +17,19 @@ type RouteContext = {
 
 type AdminClient = ReturnType<typeof getSupabaseAdminClient>;
 
-function membersTable(admin: AdminClient): any {
-    return (admin as unknown as {
-        from: (table: string) => any;
-    }).from('conversation_members');
-}
+type MessageRow =
+    Database['public']['Tables']['messages']['Row'];
 
-type MessageType = 'text' | 'image' | 'file' | 'system';
+type MessageInsert =
+    Database['public']['Tables']['messages']['Insert'];
 
-interface MessageRow {
-    id: string;
-    conversation_id: string;
-    sender_id: string;
-    type: MessageType;
-    content: string;
-    attachment_url: string | null;
-    attachment_name: string | null;
-    attachment_size: number | null;
-    reply_to_id: string | null;
-    is_edited: boolean;
-    is_deleted: boolean;
-    created_at: string;
-    updated_at: string;
-}
+type UserRow =
+    Database['public']['Tables']['users']['Row'];
 
-interface UserRow {
-    id: string;
-    full_name: string;
+type MessageType = MessageRow['type'];
+
+function membersTable(admin: AdminClient) {
+    return admin.from('conversation_members');
 }
 
 function handleError(error: unknown) {
@@ -94,8 +81,10 @@ function mapMessage(
         conversationId: row.conversation_id,
 
         senderId: row.sender_id,
+
         senderName:
-            senderNames.get(row.sender_id) ?? 'Unknown user',
+            senderNames.get(row.sender_id) ??
+            'Unknown user',
 
         type: row.type,
 
@@ -120,6 +109,7 @@ function mapMessage(
         replyPreview: reply
             ? {
                   id: reply.id,
+
                   senderName:
                       senderNames.get(reply.sender_id) ??
                       'Unknown user',
@@ -173,7 +163,11 @@ export async function GET(
             ),
         );
 
-        await assertMember(admin, conversationId, userId);
+        await assertMember(
+            admin,
+            conversationId,
+            userId,
+        );
 
         const totalResult = await admin
             .from('messages')
@@ -204,12 +198,15 @@ export async function GET(
             throw messagesResult.error;
         }
 
-        const rows = ((messagesResult.data ?? []) as MessageRow[])
-            .slice()
-            .reverse();
+        const rows: MessageRow[] =
+            messagesResult.data?.slice().reverse() ?? [];
 
         const senderIds = Array.from(
-            new Set(rows.map((row) => row.sender_id)),
+            new Set(
+                rows
+                    .map((row) => row.sender_id)
+                    .filter(Boolean),
+            ),
         );
 
         const replyIds = Array.from(
@@ -231,7 +228,10 @@ export async function GET(
                           .select('id, full_name')
                           .in('id', senderIds)
                     : Promise.resolve({
-                          data: [] as UserRow[],
+                          data: [] as Pick<
+                              UserRow,
+                              'id' | 'full_name'
+                          >[],
                           error: null,
                       }),
 
@@ -255,21 +255,26 @@ export async function GET(
         }
 
         const senderNames = new Map<string, string>(
-            (usersResult.data ?? []).map((user: UserRow) => [
+            (usersResult.data ?? []).map((user) => [
                 user.id,
-                user.full_name,
+                user.full_name ?? 'Unknown user',
             ]),
         );
 
         const repliedTo = new Map<string, MessageRow>(
-            ((repliesResult.data ?? []) as MessageRow[]).map(
-                (message) => [message.id, message],
-            ),
+            (repliesResult.data ?? []).map((message) => [
+                message.id,
+                message,
+            ]),
         );
 
         return apiSuccess({
             messages: rows.map((row) =>
-                mapMessage(row, senderNames, repliedTo),
+                mapMessage(
+                    row,
+                    senderNames,
+                    repliedTo,
+                ),
             ),
 
             page,
@@ -300,7 +305,7 @@ export async function POST(
 
         const body = await readJsonBody<{
             senderId?: string;
-            type?: string;
+            type?: MessageType;
             content?: string;
             attachmentUrl?: string;
             attachmentName?: string;
@@ -319,9 +324,9 @@ export async function POST(
             senderId,
         );
 
-        const type = (
-            optionalString(body.type) ?? 'text'
-        ) as MessageType;
+        const type =
+            (optionalString(body.type) as MessageType) ??
+            'text';
 
         if (
             !['text', 'image', 'file', 'system'].includes(
@@ -359,7 +364,10 @@ export async function POST(
                 .from('messages')
                 .select('id')
                 .eq('id', body.replyToId)
-                .eq('conversation_id', conversationId)
+                .eq(
+                    'conversation_id',
+                    conversationId,
+                )
                 .maybeSingle();
 
             if (replyCheck.error) {
@@ -374,48 +382,50 @@ export async function POST(
             }
         }
 
+        const payload: MessageInsert = {
+            conversation_id: conversationId,
+            sender_id: senderId,
+
+            type,
+
+            content:
+                optionalString(body.content) ?? '',
+
+            attachment_url:
+                optionalString(body.attachmentUrl) ??
+                null,
+
+            attachment_name:
+                optionalString(body.attachmentName) ??
+                null,
+
+            attachment_size:
+                body.attachmentSize ?? null,
+
+            reply_to_id:
+                optionalString(body.replyToId) ?? null,
+
+            is_edited: false,
+            is_deleted: false,
+        };
+
         const insertResult = await admin
             .from('messages')
-            .insert({
-                conversation_id: conversationId,
-                sender_id: senderId,
-
-                type,
-
-                content:
-                    optionalString(body.content) ?? '',
-
-                attachment_url:
-                    optionalString(body.attachmentUrl) ??
-                    null,
-
-                attachment_name:
-                    optionalString(body.attachmentName) ??
-                    null,
-
-                attachment_size:
-                    body.attachmentSize ?? null,
-
-                reply_to_id:
-                    optionalString(body.replyToId) ?? null,
-
-                is_edited: false,
-                is_deleted: false,
-            })
-            .select('*')
+            .insert(payload)
+            .select()
             .single();
 
         if (insertResult.error) {
             throw insertResult.error;
         }
 
-        const insertedMessage =
-            insertResult.data as MessageRow;
+        const insertedMessage = insertResult.data;
 
         const updateConversation = await admin
             .from('conversations')
             .update({
-                last_message_id: insertedMessage.id,
+                last_message_id:
+                    insertedMessage.id,
                 last_message_at:
                     insertedMessage.created_at,
             })
@@ -438,11 +448,15 @@ export async function POST(
         const senderNames = new Map<string, string>([
             [
                 senderResult.data.id,
-                senderResult.data.full_name,
+                senderResult.data.full_name ??
+                    'Unknown user',
             ],
         ]);
 
-        const repliedTo = new Map<string, MessageRow>();
+        const repliedTo = new Map<
+            string,
+            MessageRow
+        >();
 
         if (body.replyToId) {
             const replyResult = await admin
@@ -451,36 +465,38 @@ export async function POST(
                 .eq('id', body.replyToId)
                 .maybeSingle();
 
-            if (!replyResult.error && replyResult.data) {
+            if (
+                !replyResult.error &&
+                replyResult.data
+            ) {
                 const replyMessage =
-                    replyResult.data as MessageRow;
+                    replyResult.data;
 
                 repliedTo.set(
                     replyMessage.id,
                     replyMessage,
                 );
 
-                if (replyMessage.sender_id) {
-                    const replySenderResult =
-                        await admin
-                            .from('users')
-                            .select('id, full_name')
-                            .eq(
-                                'id',
-                                replyMessage.sender_id,
-                            )
-                            .maybeSingle();
+                const replySenderResult =
+                    await admin
+                        .from('users')
+                        .select('id, full_name')
+                        .eq(
+                            'id',
+                            replyMessage.sender_id,
+                        )
+                        .maybeSingle();
 
-                    if (
-                        !replySenderResult.error &&
+                if (
+                    !replySenderResult.error &&
+                    replySenderResult.data
+                ) {
+                    senderNames.set(
+                        replySenderResult.data.id,
                         replySenderResult.data
-                    ) {
-                        senderNames.set(
-                            replySenderResult.data.id,
-                            replySenderResult.data
-                                .full_name,
-                        );
-                    }
+                            .full_name ??
+                            'Unknown user',
+                    );
                 }
             }
         }
