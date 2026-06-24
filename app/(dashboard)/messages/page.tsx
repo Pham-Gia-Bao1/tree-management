@@ -8,27 +8,26 @@ import {
     Button,
     Dropdown,
     Empty,
+    Image,
     Input,
     Spin,
-    Tag,
     Tooltip,
     Typography,
     Upload,
 } from 'antd';
 import type { MenuProps, UploadProps } from 'antd';
 import {
-    CloseOutlined,
-    DeleteOutlined,
-    EditOutlined,
-    FileOutlined,
-    MoreOutlined,
-    PaperClipOutlined,
-    PictureOutlined,
-    SearchOutlined,
-    SendOutlined,
-    SmileOutlined,
-    UserOutlined,
-} from '@ant-design/icons';
+    File as FileIcon,
+    MoreVertical,
+    Paperclip,
+    Pencil,
+    Search,
+    Send,
+    Smile,
+    Trash2,
+    User as UserIcon,
+    X,
+} from 'lucide-react';
 import { createClient, type RealtimeChannel } from '@supabase/supabase-js';
 import { formatDateTime } from '@/utils/date';
 
@@ -44,6 +43,7 @@ interface ConversationListItem {
     title: string;
     avatarUrl: string | null;
     type: ConversationType;
+    otherUserId: string | null;
     lastMessage: string | null;
     lastMessageAt: string | null;
     unreadCount: number;
@@ -76,7 +76,7 @@ interface ReplyPreview {
 interface MessageRecord {
     id: string;
     conversationId: string;
-    senderId: string;
+    senderId: string | null;
     senderName: string;
     type: MessageType;
     content: string;
@@ -126,6 +126,9 @@ export default function MessagesPage() {
 
     const [typingUsers, setTypingUsers] = useState<Record<string, string>>({}); // userId -> fullName
     const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+
+    // Avatar src that failed to load, so we fall back to the initial-letter avatar instead of a broken image.
+    const [brokenAvatarUrls, setBrokenAvatarUrls] = useState<Set<string>>(new Set());
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const channelRef = useRef<RealtimeChannel | null>(null);
@@ -198,14 +201,15 @@ export default function MessagesPage() {
     const markConversationRead = useCallback(async (conversationId: string) => {
         if (!currentUser) return;
         try {
-            await fetch(`/api/conversations/${conversationId}/read`, {
+            const res = await fetch(`/api/conversations/${conversationId}/read`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id }),
             });
+            if (!res.ok) throw new Error();
             setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c)));
         } catch {
-            // best-effort, ignore failures
+            // best-effort, ignore failures — unread badge will just stay stale until next refresh
         }
     }, [currentUser]);
 
@@ -223,6 +227,25 @@ export default function MessagesPage() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
+    /* ------------------- Member name lookup (for realtime) ------------------- */
+
+    // postgres_changes payloads only carry raw column values — there is no
+    // sender_name column on `messages` — so we resolve names client-side
+    // from the conversation members we already loaded.
+    const memberNameById = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const member of conversationDetail?.members ?? []) {
+            map.set(member.userId, member.fullName);
+        }
+        return map;
+    }, [conversationDetail]);
+
+    const resolveSenderName = useCallback((senderId: string | null): string => {
+        if (!senderId) return 'Unknown user';
+        if (senderId === currentUser?.id) return currentUser.fullName;
+        return memberNameById.get(senderId) ?? 'Unknown user';
+    }, [memberNameById, currentUser]);
+
     /* --------------------------- Realtime: messages --------------------------- */
 
     useEffect(() => {
@@ -235,6 +258,8 @@ export default function MessagesPage() {
                 { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` },
                 (payload) => {
                     const row = payload.new as Record<string, unknown>;
+                    const senderId = (row.sender_id as string | null) ?? null;
+
                     setMessages((prev) => {
                         if (prev.some((m) => m.id === row.id)) return prev;
                         return [
@@ -242,8 +267,8 @@ export default function MessagesPage() {
                             {
                                 id: row.id as string,
                                 conversationId: row.conversation_id as string,
-                                senderId: row.sender_id as string,
-                                senderName: (row.sender_name as string) ?? 'Unknown user',
+                                senderId,
+                                senderName: resolveSenderName(senderId),
                                 type: row.type as MessageType,
                                 content: row.content as string,
                                 attachmentUrl: (row.attachment_url as string | null) ?? null,
@@ -258,7 +283,8 @@ export default function MessagesPage() {
                             },
                         ];
                     });
-                    if (row.sender_id !== currentUser?.id) {
+
+                    if (senderId !== currentUser?.id) {
                         void markConversationRead(selectedConversationId);
                     } else {
                         void loadConversations();
@@ -306,7 +332,7 @@ export default function MessagesPage() {
             setTypingUsers({});
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedConversationId, currentUser?.id]);
+    }, [selectedConversationId, currentUser?.id, resolveSenderName]);
 
     /* --------------------------- Realtime: presence --------------------------- */
 
@@ -492,6 +518,17 @@ export default function MessagesPage() {
     const isOtherOnline = otherMember ? onlineUserIds.has(otherMember.userId) : false;
     const typingNames = Object.values(typingUsers);
 
+    const avatarPropsFor = (url: string | null): { src?: string; onError?: () => boolean } =>
+        url && !brokenAvatarUrls.has(url)
+            ? {
+                src: url,
+                onError: () => {
+                    setBrokenAvatarUrls((prev) => new Set(prev).add(url));
+                    return false; // tell antd not to swap in its own broken-image placeholder
+                },
+            }
+            : {};
+
     const messageMenu = (msg: MessageRecord): MenuProps['items'] => [
         {
             key: 'reply',
@@ -506,7 +543,7 @@ export default function MessagesPage() {
                 {
                     key: 'edit',
                     label: 'Edit',
-                    icon: <EditOutlined />,
+                    icon: <Pencil size={14} />,
                     onClick: () => {
                         setEditingMessage(msg);
                         setReplyTarget(null);
@@ -516,7 +553,7 @@ export default function MessagesPage() {
                 {
                     key: 'delete',
                     label: 'Delete',
-                    icon: <DeleteOutlined />,
+                    icon: <Trash2 size={14} />,
                     danger: true,
                     onClick: () => void deleteMessage(msg.id),
                 },
@@ -548,7 +585,7 @@ export default function MessagesPage() {
                 <div style={{ width: 300, borderRight: '1px solid #d0d7de', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ padding: '12px 12px 8px' }}>
                         <Input
-                            prefix={<SearchOutlined />}
+                            prefix={<Search size={14} />}
                             placeholder="Search conversations..."
                             value={conversationSearch}
                             onChange={(e) => setConversationSearch(e.target.value)}
@@ -562,47 +599,58 @@ export default function MessagesPage() {
                         ) : filteredConversations.length === 0 ? (
                             <div style={{ padding: 24 }}><Empty description="No conversations" /></div>
                         ) : (
-                            filteredConversations.map((conversation) => (
-                                <div
-                                    key={conversation.id}
-                                    onClick={() => selectConversation(conversation.id)}
-                                    style={{
-                                        padding: '10px 14px',
-                                        cursor: 'pointer',
-                                        background: selectedConversationId === conversation.id ? '#f0f6ff' : 'transparent',
-                                        borderLeft: selectedConversationId === conversation.id ? '3px solid #1677ff' : '3px solid transparent',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 10,
-                                    }}
-                                >
-                                    <Badge dot={conversation.type === 'private' && onlineUserIds.size > 0} status="success" offset={[-4, 28]}>
-                                        <Avatar size={40} src={conversation.avatarUrl ?? undefined} icon={<UserOutlined />} style={{ background: '#7F77DD', flexShrink: 0 }}>
-                                            {conversation.title.charAt(0)}
-                                        </Avatar>
-                                    </Badge>
-                                    <div style={{ minWidth: 0, flex: 1 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                                            <span style={{ fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {conversation.title}
-                                            </span>
-                                            {conversation.lastMessageAt && (
-                                                <span style={{ fontSize: 10, color: '#8c959f', flexShrink: 0, marginLeft: 6 }}>
-                                                    {formatDateTime(conversation.lastMessageAt)}
+                            filteredConversations.map((conversation) => {
+                                const isOnline = conversation.type === 'private'
+                                    && conversation.otherUserId !== null
+                                    && onlineUserIds.has(conversation.otherUserId);
+
+                                return (
+                                    <div
+                                        key={conversation.id}
+                                        onClick={() => selectConversation(conversation.id)}
+                                        style={{
+                                            padding: '10px 14px',
+                                            cursor: 'pointer',
+                                            background: selectedConversationId === conversation.id ? '#f0f6ff' : 'transparent',
+                                            borderLeft: selectedConversationId === conversation.id ? '3px solid #1677ff' : '3px solid transparent',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 10,
+                                        }}
+                                    >
+                                        <Badge dot={isOnline} status="success" offset={[-4, 28]}>
+                                            <Avatar
+                                                size={40}
+                                                {...avatarPropsFor(conversation.avatarUrl)}
+                                                icon={<UserIcon size={18} />}
+                                                style={{ background: '#7F77DD', flexShrink: 0 }}
+                                            >
+                                                {conversation.title.charAt(0)}
+                                            </Avatar>
+                                        </Badge>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                                                <span style={{ fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {conversation.title}
                                                 </span>
-                                            )}
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ fontSize: 12, color: '#656d76', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {conversation.lastMessage ?? 'No messages yet'}
-                                            </span>
-                                            {conversation.unreadCount > 0 && (
-                                                <Badge count={conversation.unreadCount} size="small" style={{ marginLeft: 6 }} />
-                                            )}
+                                                {conversation.lastMessageAt && (
+                                                    <span style={{ fontSize: 10, color: '#8c959f', flexShrink: 0, marginLeft: 6 }}>
+                                                        {formatDateTime(conversation.lastMessageAt)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ fontSize: 12, color: '#656d76', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {conversation.lastMessage ?? 'No messages yet'}
+                                                </span>
+                                                {conversation.unreadCount > 0 && (
+                                                    <Badge count={conversation.unreadCount} size="small" style={{ marginLeft: 6 }} />
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </div>
@@ -621,7 +669,12 @@ export default function MessagesPage() {
                             {/* Header */}
                             <div style={{ padding: '12px 16px', borderBottom: '1px solid #d0d7de', display: 'flex', alignItems: 'center', gap: 10 }}>
                                 <Badge dot={isOtherOnline} status="success" offset={[-4, 24]}>
-                                    <Avatar size={36} src={selectedConversation.avatarUrl ?? undefined} icon={<UserOutlined />} style={{ background: '#7F77DD' }}>
+                                    <Avatar
+                                        size={36}
+                                        {...avatarPropsFor(selectedConversation.avatarUrl)}
+                                        icon={<UserIcon size={16} />}
+                                        style={{ background: '#7F77DD' }}
+                                    >
                                         {selectedConversation.title.charAt(0)}
                                     </Avatar>
                                 </Badge>
@@ -658,7 +711,7 @@ export default function MessagesPage() {
                                                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4 }}>
                                                         {isOwn && !msg.isDeleted && (
                                                             <Dropdown menu={{ items: messageMenu(msg) }} trigger={['click']}>
-                                                                <Button type="text" size="small" icon={<MoreOutlined />} style={{ opacity: 0.5 }} />
+                                                                <Button type="text" size="small" icon={<MoreVertical size={14} />} style={{ opacity: 0.5 }} />
                                                             </Dropdown>
                                                         )}
                                                         <div>
@@ -679,19 +732,25 @@ export default function MessagesPage() {
                                                             )}
                                                             <div
                                                                 style={{
-                                                                    padding: '8px 12px',
+                                                                    padding: msg.type === 'image' && !msg.isDeleted ? 4 : '8px 12px',
                                                                     borderRadius: isOwn ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
                                                                     background: msg.isDeleted ? '#f1f3f5' : isOwn ? '#1677ff' : '#f1f3f5',
                                                                     color: msg.isDeleted ? '#8c959f' : isOwn ? '#fff' : '#24292f',
                                                                     fontSize: 14,
                                                                     fontStyle: msg.isDeleted ? 'italic' : 'normal',
+                                                                    overflow: 'hidden',
                                                                 }}
                                                             >
                                                                 {msg.type === 'image' && msg.attachmentUrl && !msg.isDeleted ? (
-                                                                    <img src={msg.attachmentUrl} alt={msg.attachmentName ?? 'image'} style={{ maxWidth: 220, borderRadius: 6, display: 'block' }} />
+                                                                    <Image
+                                                                        src={msg.attachmentUrl}
+                                                                        alt={msg.attachmentName ?? 'image'}
+                                                                        width={220}
+                                                                        style={{ borderRadius: 8, display: 'block' }}
+                                                                    />
                                                                 ) : msg.type === 'file' && msg.attachmentUrl && !msg.isDeleted ? (
                                                                     <a href={msg.attachmentUrl} target="_blank" rel="noreferrer" style={{ color: isOwn ? '#fff' : '#1677ff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                        <FileOutlined /> {msg.attachmentName ?? 'Download file'}
+                                                                        <FileIcon size={14} /> {msg.attachmentName ?? 'Download file'}
                                                                     </a>
                                                                 ) : (
                                                                     <span>{msg.content}</span>
@@ -700,7 +759,7 @@ export default function MessagesPage() {
                                                         </div>
                                                         {!isOwn && !msg.isDeleted && (
                                                             <Dropdown menu={{ items: messageMenu(msg) }} trigger={['click']}>
-                                                                <Button type="text" size="small" icon={<MoreOutlined />} style={{ opacity: 0.5 }} />
+                                                                <Button type="text" size="small" icon={<MoreVertical size={14} />} style={{ opacity: 0.5 }} />
                                                             </Dropdown>
                                                         )}
                                                     </div>
@@ -737,22 +796,22 @@ export default function MessagesPage() {
                                     }}
                                 >
                                     <span>
-                                        {editingMessage ? <><EditOutlined /> Editing message</> : <>Replying to <strong>{replyTarget?.senderName}</strong>: {replyTarget?.content}</>}
+                                        {editingMessage ? <><Pencil size={12} style={{ marginRight: 4, verticalAlign: -1 }} /> Editing message</> : <>Replying to <strong>{replyTarget?.senderName}</strong>: {replyTarget?.content}</>}
                                     </span>
-                                    <Button type="text" size="small" icon={<CloseOutlined />} onClick={resetComposer} />
+                                    <Button type="text" size="small" icon={<X size={14} />} onClick={resetComposer} />
                                 </div>
                             )}
 
                             {/* Footer / composer */}
                             <div style={{ padding: '12px 16px', borderTop: '1px solid #d0d7de', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                                 <Upload {...buildUploadProps('image')}>
-                                    <Tooltip title="Upload image"><Button icon={<PictureOutlined />} /></Tooltip>
+                                    <Tooltip title="Upload image"><Button icon={<FileIcon size={16} />} /></Tooltip>
                                 </Upload>
                                 <Upload {...buildUploadProps('file')}>
-                                    <Tooltip title="Upload file"><Button icon={<PaperClipOutlined />} /></Tooltip>
+                                    <Tooltip title="Upload file"><Button icon={<Paperclip size={16} />} /></Tooltip>
                                 </Upload>
                                 <Tooltip title="Emoji (coming soon)">
-                                    <Button icon={<SmileOutlined />} disabled />
+                                    <Button icon={<Smile size={16} />} disabled />
                                 </Tooltip>
                                 <Input.TextArea
                                     value={inputValue}
@@ -764,7 +823,7 @@ export default function MessagesPage() {
                                 />
                                 <Button
                                     type="primary"
-                                    icon={<SendOutlined />}
+                                    icon={<Send size={16} />}
                                     onClick={handleSend}
                                     loading={sending}
                                     disabled={!inputValue.trim()}
