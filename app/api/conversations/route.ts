@@ -1,33 +1,19 @@
-
-// PATH: /app/api/conversations/route.ts
+// PATH: /api/conversations
 import { NextRequest } from 'next/server';
 import { apiFailure, apiSuccess } from '@/lib/api/api-response';
 import { ApiError } from '@/lib/api/api-error';
-import {
-    readJsonBody,
-    requireString,
-    optionalString,
-} from '@/lib/api/validation';
+import { readJsonBody, requireString, optionalString } from '@/lib/api/validation';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import { Database } from '@/types/database.types';
+import type { Database } from '@/types/database.types';
 
-type ConversationType =
-    Database['public']['Enums']['conversation_type'];
+type AdminClient = ReturnType<typeof getSupabaseAdminClient>;
 
-type ConversationRow =
-    Database['public']['Tables']['conversations']['Row'];
-
-type MemberRow =
-    Database['public']['Tables']['conversation_members']['Row'];
-
-type MessageRow =
-    Database['public']['Tables']['messages']['Row'];
-
-type UserRow =
-    Pick<
-        Database['public']['Tables']['users']['Row'],
-        'id' | 'full_name' | 'avatar_url' | 'mentor_id'
-    >;
+type ConversationType = Database['public']['Tables']['conversations']['Row']['type'];
+type ConversationRow = Database['public']['Tables']['conversations']['Row'];
+type MemberRow = Database['public']['Tables']['conversation_members']['Row'];
+type MessageRow = Database['public']['Tables']['messages']['Row'];
+type UserRow = Pick<Database['public']['Tables']['users']['Row'], 'id' | 'full_name' | 'avatar_url'>;
+type TrainingLinkRow = Pick<Database['public']['Tables']['training_links']['Row'], 'mentor_id' | 'disciple_id'>;
 
 interface ConversationListItem {
     id: string;
@@ -41,21 +27,8 @@ interface ConversationListItem {
 }
 
 function handleError(error: unknown) {
-    if (error instanceof ApiError) {
-        return apiFailure(
-            error.message,
-            error.status,
-            error.details,
-        );
-    }
-
-    return apiFailure(
-        error instanceof Error
-            ? error.message
-            : 'Unexpected error.',
-        500,
-        error,
-    );
+    if (error instanceof ApiError) return apiFailure(error.message, error.status, error.details);
+    return apiFailure(error instanceof Error ? error.message : 'Unexpected error.', 500, error);
 }
 
 function sortedPair(a: string, b: string): [string, string] {
@@ -63,72 +36,34 @@ function sortedPair(a: string, b: string): [string, string] {
 }
 
 /**
- * Business rule:
- * - Can chat with mentor
- * - Can chat with disciple
- * - Can chat with users sharing existing conversation
+ * Business rule: a member can only chat with their mentor, their disciple,
+ * or users that already share a conversation with them.
+ * Mentor/disciple relation comes from `training_links` (the actual schema
+ * has no `users.mentor_id` column).
  */
-async function assertAllowedToChat(
-    admin: ReturnType<typeof getSupabaseAdminClient>,
-    userId: string,
-    otherUserId: string,
-) {
+async function assertAllowedToChat(admin: AdminClient, userId: string, otherUserId: string) {
     if (userId === otherUserId) {
-        throw new ApiError(
-            'Cannot start a conversation with yourself.',
-            400,
-        );
+        throw new ApiError('Cannot start a conversation with yourself.', 400);
     }
 
-    const usersResult = await admin
-        .from('users')
-        .select('id, mentor_id')
-        .in('id', [userId, otherUserId]);
+    const trainingLinkResult = await admin
+        .from('training_links')
+        .select('mentor_id, disciple_id')
+        .or(
+            `and(mentor_id.eq.${userId},disciple_id.eq.${otherUserId}),and(mentor_id.eq.${otherUserId},disciple_id.eq.${userId})`,
+        )
+        .limit(1);
+    if (trainingLinkResult.error) throw trainingLinkResult.error;
 
-    if (usersResult.error) {
-        throw usersResult.error;
-    }
+    const isMentorOrDisciple = ((trainingLinkResult.data ?? []) as TrainingLinkRow[]).length > 0;
+    if (isMentorOrDisciple) return;
 
-    const users = (usersResult.data ?? []) as UserRow[];
-
-    const byId = new Map<string, UserRow>(
-        users.map((user) => [user.id, user]),
-    );
-
-    const me = byId.get(userId);
-    const other = byId.get(otherUserId);
-
-    if (!me || !other) {
-        throw new ApiError('User not found.', 404);
-    }
-
-    const isMentorOrDisciple =
-        me.mentor_id === otherUserId ||
-        other.mentor_id === userId;
-
-    if (isMentorOrDisciple) {
-        return;
-    }
-
-    const myMemberships = await admin
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', userId);
-
-    if (myMemberships.error) {
-        throw myMemberships.error;
-    }
-
-    const conversationIds =
-        myMemberships.data?.map(
-            (member) => member.conversation_id,
-        ) ?? [];
-
+    // Fallback: allowed if they already share any conversation.
+    const myMemberships = await admin.from('conversation_members').select('conversation_id').eq('user_id', userId);
+    if (myMemberships.error) throw myMemberships.error;
+    const conversationIds = (myMemberships.data ?? []).map((m) => m.conversation_id);
     if (conversationIds.length === 0) {
-        throw new ApiError(
-            'You are not allowed to message this user.',
-            403,
-        );
+        throw new ApiError('You are not allowed to message this user.', 403);
     }
 
     const sharedResult = await admin
@@ -137,305 +72,116 @@ async function assertAllowedToChat(
         .eq('user_id', otherUserId)
         .in('conversation_id', conversationIds)
         .limit(1);
+    if (sharedResult.error) throw sharedResult.error;
 
-    if (sharedResult.error) {
-        throw sharedResult.error;
-    }
-
-    if ((sharedResult.data ?? []).length === 0) {
-        throw new ApiError(
-            'You are not allowed to message this user.',
-            403,
-        );
+    if (!sharedResult.data || sharedResult.data.length === 0) {
+        throw new ApiError('You are not allowed to message this user.', 403);
     }
 }
 
 export async function GET(request: NextRequest) {
     try {
         const admin = getSupabaseAdminClient();
-
-        const searchParams = new URL(request.url).searchParams;
-
-        const userId = requireString(
-            searchParams.get('userId'),
-            'userId',
-        );
+        const params = new URL(request.url).searchParams;
+        const userId = requireString(params.get('userId'), 'userId');
 
         const membershipResult = await admin
             .from('conversation_members')
             .select('*')
             .eq('user_id', userId);
+        if (membershipResult.error) throw membershipResult.error;
 
-        if (membershipResult.error) {
-            throw membershipResult.error;
-        }
+        const myMemberships = (membershipResult.data ?? []) as MemberRow[];
+        if (myMemberships.length === 0) return apiSuccess<ConversationListItem[]>([]);
 
-        const myMemberships =
-            (membershipResult.data ?? []) as MemberRow[];
+        const conversationIds = myMemberships.map((m) => m.conversation_id);
+        const lastReadByConversation = new Map(myMemberships.map((m) => [m.conversation_id, m.last_read_at]));
 
-        if (myMemberships.length === 0) {
-            return apiSuccess<ConversationListItem[]>([]);
-        }
+        const [conversationsResult, allMembersResult] = await Promise.all([
+            admin.from('conversations').select('*').in('id', conversationIds).eq('is_archived', false),
+            admin.from('conversation_members').select('*').in('conversation_id', conversationIds),
+        ]);
+        if (conversationsResult.error) throw conversationsResult.error;
+        if (allMembersResult.error) throw allMembersResult.error;
 
-        const conversationIds = myMemberships.map(
-            (member) => member.conversation_id,
-        );
+        const conversations = (conversationsResult.data ?? []) as ConversationRow[];
+        const allMembers = (allMembersResult.data ?? []) as MemberRow[];
 
-        const lastReadByConversation = new Map<
-            string,
-            string | null
-        >(
-            myMemberships.map((member) => [
-                member.conversation_id,
-                member.last_read_at,
-            ]),
-        );
-
-        const [conversationsResult, allMembersResult] =
-            await Promise.all([
-                admin
-                    .from('conversations')
-                    .select('*')
-                    .in('id', conversationIds)
-                    .eq('is_archived', false),
-
-                admin
-                    .from('conversation_members')
-                    .select('*')
-                    .in('conversation_id', conversationIds),
-            ]);
-
-        if (conversationsResult.error) {
-            throw conversationsResult.error;
-        }
-
-        if (allMembersResult.error) {
-            throw allMembersResult.error;
-        }
-
-        const conversations =
-            (conversationsResult.data ?? []) as ConversationRow[];
-
-        const allMembers =
-            (allMembersResult.data ?? []) as MemberRow[];
-
-        const memberCountByConversation = new Map<
-            string,
-            number
-        >();
-
-        const otherUserIdByConversation = new Map<
-            string,
-            string
-        >();
-
+        const memberCountByConversation = new Map<string, number>();
+        const otherUserIdByConversation = new Map<string, string>();
         for (const member of allMembers) {
             memberCountByConversation.set(
                 member.conversation_id,
-                (memberCountByConversation.get(
-                    member.conversation_id,
-                ) ?? 0) + 1,
+                (memberCountByConversation.get(member.conversation_id) ?? 0) + 1,
             );
-
             if (member.user_id !== userId) {
-                otherUserIdByConversation.set(
-                    member.conversation_id,
-                    member.user_id,
-                );
+                otherUserIdByConversation.set(member.conversation_id, member.user_id);
             }
         }
 
-        const lastMessageIds = conversations
-            .map((conversation) => conversation.last_message_id)
-            .filter(
-                (id): id is string => typeof id === 'string',
-            );
+        const lastMessageIds = conversations.map((c) => c.last_message_id).filter((id): id is string => Boolean(id));
+        const otherUserIds = Array.from(new Set(Array.from(otherUserIdByConversation.values())));
 
-        const otherUserIds = Array.from(
-            new Set(
-                Array.from(
-                    otherUserIdByConversation.values(),
-                ),
-            ),
-        );
-
-        const [
-            lastMessagesResult,
-            otherUsersResult,
-            unreadCountsResult,
-        ] = await Promise.all([
-            lastMessageIds.length
-                ? admin
-                      .from('messages')
-                      .select('*')
-                      .in('id', lastMessageIds)
-                : Promise.resolve({
-                      data: [] as MessageRow[],
-                      error: null,
-                  }),
-
-            otherUserIds.length
-                ? admin
-                      .from('users')
-                      .select(
-                          'id, full_name, avatar_url',
-                      )
-                      .in('id', otherUserIds)
-                : Promise.resolve({
-                      data: [] as UserRow[],
-                      error: null,
-                  }),
-
+        const [lastMessagesResult, otherUsersResult, unreadCountsResult] = await Promise.all([
+            lastMessageIds.length > 0
+                ? admin.from('messages').select('*').in('id', lastMessageIds)
+                : Promise.resolve({ data: [] as MessageRow[], error: null }),
+            otherUserIds.length > 0
+                ? admin.from('users').select('id, full_name, avatar_url').in('id', otherUserIds)
+                : Promise.resolve({ data: [] as UserRow[], error: null }),
             admin
                 .from('messages')
-                .select(
-                    'id, conversation_id, sender_id, created_at, is_deleted',
-                )
+                .select('id, conversation_id, sender_id, created_at, is_deleted')
                 .in('conversation_id', conversationIds)
                 .eq('is_deleted', false),
         ]);
+        if (lastMessagesResult.error) throw lastMessagesResult.error;
+        if (otherUsersResult.error) throw otherUsersResult.error;
+        if (unreadCountsResult.error) throw unreadCountsResult.error;
 
-        if (lastMessagesResult.error) {
-            throw lastMessagesResult.error;
-        }
+        const lastMessageById = new Map((lastMessagesResult.data ?? []).map((m) => [m.id, m as MessageRow]));
+        const otherUserById = new Map((otherUsersResult.data ?? []).map((u) => [u.id, u as UserRow]));
 
-        if (otherUsersResult.error) {
-            throw otherUsersResult.error;
-        }
-
-        if (unreadCountsResult.error) {
-            throw unreadCountsResult.error;
-        }
-
-        const lastMessageById = new Map<
-            string,
-            MessageRow
-        >(
-            ((lastMessagesResult.data ??
-                []) as MessageRow[]).map((message) => [
-                message.id,
-                message,
-            ]),
-        );
-
-        const otherUserById = new Map<string, UserRow>(
-            ((otherUsersResult.data ??
-                []) as UserRow[]).map((user) => [
-                user.id,
-                user,
-            ]),
-        );
-
-        const unreadCountByConversation = new Map<
-            string,
-            number
-        >();
-
-        for (const row of
-            (unreadCountsResult.data ?? []) as Pick<
-                MessageRow,
-                | 'conversation_id'
-                | 'sender_id'
-                | 'created_at'
-            >[]) {
-            if (row.sender_id === userId) {
-                continue;
-            }
-
-            const lastReadAt =
-                lastReadByConversation.get(
-                    row.conversation_id,
-                );
-
-            if (
-                !lastReadAt ||
-                new Date(row.created_at) >
-                    new Date(lastReadAt)
-            ) {
-                unreadCountByConversation.set(
-                    row.conversation_id,
-                    (unreadCountByConversation.get(
-                        row.conversation_id,
-                    ) ?? 0) + 1,
-                );
+        const unreadCountByConversation = new Map<string, number>();
+        type UnreadCandidate = Pick<MessageRow, 'id' | 'conversation_id' | 'sender_id' | 'created_at' | 'is_deleted'>;
+        for (const row of (unreadCountsResult.data ?? []) as UnreadCandidate[]) {
+            if (row.sender_id === userId) continue;
+            const lastReadAt = lastReadByConversation.get(row.conversation_id);
+            if (!lastReadAt || new Date(row.created_at) > new Date(lastReadAt)) {
+                unreadCountByConversation.set(row.conversation_id, (unreadCountByConversation.get(row.conversation_id) ?? 0) + 1);
             }
         }
 
-        const items: ConversationListItem[] =
-            conversations
-                .map((conversation) => {
-                    const lastMessage =
-                        conversation.last_message_id
-                            ? lastMessageById.get(
-                                  conversation.last_message_id,
-                              )
-                            : undefined;
+        const items: ConversationListItem[] = conversations
+            .map((conversation) => {
+                const lastMessage = conversation.last_message_id ? lastMessageById.get(conversation.last_message_id) : undefined;
+                const otherUserId = otherUserIdByConversation.get(conversation.id);
+                const otherUser = conversation.type === 'private' && otherUserId ? otherUserById.get(otherUserId) : undefined;
 
-                    const otherUser =
-                        conversation.type === 'private'
-                            ? otherUserById.get(
-                                  otherUserIdByConversation.get(
-                                      conversation.id,
-                                  ) ?? '',
-                              )
-                            : undefined;
+                const title = conversation.type === 'private'
+                    ? (otherUser?.full_name ?? conversation.title ?? 'Unknown user')
+                    : (conversation.title ?? 'Group');
 
-                    return {
-                        id: conversation.id,
+                const avatarUrl = conversation.type === 'private'
+                    ? (otherUser?.avatar_url ?? null)
+                    : conversation.avatar_url;
 
-                        title:
-                            conversation.type ===
-                            'private'
-                                ? otherUser?.full_name ??
-                                  conversation.title ??
-                                  'Unknown user'
-                                : conversation.title ??
-                                  'Group',
-
-                        avatarUrl:
-                            conversation.type ===
-                            'private'
-                                ? otherUser?.avatar_url ??
-                                  null
-                                : conversation.avatar_url,
-
-                        type: conversation.type,
-
-                        lastMessage: lastMessage
-                            ? lastMessage.is_deleted
-                                ? 'Message deleted'
-                                : lastMessage.content
-                            : null,
-
-                        lastMessageAt:
-                            conversation.last_message_at,
-
-                        unreadCount:
-                            unreadCountByConversation.get(
-                                conversation.id,
-                            ) ?? 0,
-
-                        memberCount:
-                            memberCountByConversation.get(
-                                conversation.id,
-                            ) ?? 0,
-                    };
-                })
-                .sort((a, b) => {
-                    const aTime = a.lastMessageAt
-                        ? new Date(
-                              a.lastMessageAt,
-                          ).getTime()
-                        : 0;
-
-                    const bTime = b.lastMessageAt
-                        ? new Date(
-                              b.lastMessageAt,
-                          ).getTime()
-                        : 0;
-
-                    return bTime - aTime;
-                });
+                return {
+                    id: conversation.id,
+                    title,
+                    avatarUrl,
+                    type: conversation.type,
+                    lastMessage: lastMessage ? (lastMessage.is_deleted ? 'Message deleted' : lastMessage.content) : null,
+                    lastMessageAt: conversation.last_message_at,
+                    unreadCount: unreadCountByConversation.get(conversation.id) ?? 0,
+                    memberCount: memberCountByConversation.get(conversation.id) ?? 0,
+                };
+            })
+            .sort((a, b) => {
+                const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+                const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+                return bTime - aTime;
+            });
 
         return apiSuccess(items);
     } catch (error) {
@@ -446,7 +192,6 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const admin = getSupabaseAdminClient();
-
         const body = await readJsonBody<{
             type?: string;
             memberIds?: string[];
@@ -457,58 +202,22 @@ export async function POST(request: NextRequest) {
             trainingLinkId?: string;
         }>(request);
 
-        const createdBy = requireString(
-            body.createdBy,
-            'createdBy',
-        );
-
-        const type = (
-            optionalString(body.type) ?? 'private'
-        ) as ConversationType;
-
-        const memberIds = Array.isArray(body.memberIds)
-            ? Array.from(
-                  new Set(body.memberIds.filter(Boolean)),
-              )
-            : [];
-
-        // PRIVATE CHAT
+        const createdBy = requireString(body.createdBy, 'createdBy');
+        const type = (optionalString(body.type) ?? 'private') as ConversationType;
+        const memberIds = Array.isArray(body.memberIds) ? Array.from(new Set(body.memberIds.filter(Boolean))) : [];
 
         if (type === 'private') {
             if (memberIds.length !== 1) {
-                throw new ApiError(
-                    'A private conversation requires exactly one other member.',
-                    400,
-                );
+                throw new ApiError('A private conversation requires exactly one other member.', 400);
             }
-
             const otherUserId = memberIds[0];
+            await assertAllowedToChat(admin, createdBy, otherUserId);
 
-            await assertAllowedToChat(
-                admin,
-                createdBy,
-                otherUserId,
-            );
+            const [userA, userB] = sortedPair(createdBy, otherUserId);
 
-            const [userA, userB] = sortedPair(
-                createdBy,
-                otherUserId,
-            );
-
-            const myMemberships = await admin
-                .from('conversation_members')
-                .select('conversation_id')
-                .eq('user_id', userA);
-
-            if (myMemberships.error) {
-                throw myMemberships.error;
-            }
-
-            const candidateIds =
-                myMemberships.data?.map(
-                    (member) =>
-                        member.conversation_id,
-                ) ?? [];
+            const myMemberships = await admin.from('conversation_members').select('conversation_id').eq('user_id', userA);
+            if (myMemberships.error) throw myMemberships.error;
+            const candidateIds = (myMemberships.data ?? []).map((m) => m.conversation_id);
 
             if (candidateIds.length > 0) {
                 const candidatesResult = await admin
@@ -516,189 +225,73 @@ export async function POST(request: NextRequest) {
                     .select('id')
                     .eq('type', 'private')
                     .in('id', candidateIds);
+                if (candidatesResult.error) throw candidatesResult.error;
 
-                if (candidatesResult.error) {
-                    throw candidatesResult.error;
-                }
-
-                for (const candidate of
-                    candidatesResult.data ?? []) {
-                    const membersResult =
-                        await admin
-                            .from(
-                                'conversation_members',
-                            )
-                            .select('user_id')
-                            .eq(
-                                'conversation_id',
-                                candidate.id,
-                            );
-
-                    if (membersResult.error) {
-                        throw membersResult.error;
-                    }
-
-                    const ids =
-                        membersResult.data
-                            ?.map(
-                                (member) =>
-                                    member.user_id,
-                            )
-                            .sort() ?? [];
-
-                    if (
-                        ids.length === 2 &&
-                        ids[0] === userA &&
-                        ids[1] === userB
-                    ) {
-                        const existingConversation =
-                            await admin
-                                .from(
-                                    'conversations',
-                                )
-                                .select('*')
-                                .eq(
-                                    'id',
-                                    candidate.id,
-                                )
-                                .single();
-
-                        if (
-                            existingConversation.error
-                        ) {
-                            throw existingConversation.error;
-                        }
-
-                        return apiSuccess(
-                            existingConversation.data,
-                        );
+                for (const candidate of candidatesResult.data ?? []) {
+                    const membersResult = await admin
+                        .from('conversation_members')
+                        .select('user_id')
+                        .eq('conversation_id', candidate.id);
+                    if (membersResult.error) throw membersResult.error;
+                    const ids = (membersResult.data ?? []).map((m) => m.user_id).sort();
+                    if (ids.length === 2 && ids[0] === userA && ids[1] === userB) {
+                        const existingConversation = await admin.from('conversations').select('*').eq('id', candidate.id).single();
+                        if (existingConversation.error) throw existingConversation.error;
+                        return apiSuccess(existingConversation.data, 200);
                     }
                 }
             }
 
-            const insertedConversation =
-                await admin
-                    .from('conversations')
-                    .insert({
-                        type: 'private',
-                        created_by: createdBy,
-                    })
-                    .select('*')
-                    .single();
+            const insertedConversation = await admin
+                .from('conversations')
+                .insert({ type: 'private', created_by: createdBy })
+                .select('*')
+                .single();
+            if (insertedConversation.error) throw insertedConversation.error;
 
-            if (insertedConversation.error) {
-                throw insertedConversation.error;
-            }
+            const membersInsert = await admin.from('conversation_members').insert([
+                { conversation_id: insertedConversation.data.id, user_id: userA, role: 'member' },
+                { conversation_id: insertedConversation.data.id, user_id: userB, role: 'member' },
+            ]);
+            if (membersInsert.error) throw membersInsert.error;
 
-            const membersInsert = await admin
-                .from('conversation_members')
-                .insert([
-                    {
-                        conversation_id:
-                            insertedConversation.data.id,
-                        user_id: userA,
-                        role: 'member',
-                    },
-                    {
-                        conversation_id:
-                            insertedConversation.data.id,
-                        user_id: userB,
-                        role: 'member',
-                    },
-                ]);
-
-            if (membersInsert.error) {
-                throw membersInsert.error;
-            }
-
-            return apiSuccess(
-                insertedConversation.data,
-                201,
-            );
+            return apiSuccess(insertedConversation.data, 201);
         }
-
-        // GROUP CHAT
 
         if (type === 'group') {
-            const title = requireString(
-                body.title,
-                'title',
-            );
-
+            const title = requireString(body.title, 'title');
             if (memberIds.length < 1) {
-                throw new ApiError(
-                    'A group conversation requires at least one other member.',
-                    400,
-                );
+                throw new ApiError('A group conversation requires at least one other member.', 400);
             }
 
-            const insertedConversation =
-                await admin
-                    .from('conversations')
-                    .insert({
-                        type: 'group',
-                        title,
-                        avatar_url:
-                            optionalString(
-                                body.avatarUrl,
-                            ) ?? null,
+            const insertedConversation = await admin
+                .from('conversations')
+                .insert({
+                    type: 'group',
+                    title,
+                    avatar_url: optionalString(body.avatarUrl) ?? null,
+                    course_id: optionalString(body.courseId) ?? null,
+                    training_link_id: optionalString(body.trainingLinkId) ?? null,
+                    created_by: createdBy,
+                })
+                .select('*')
+                .single();
+            if (insertedConversation.error) throw insertedConversation.error;
 
-                        course_id:
-                            optionalString(
-                                body.courseId,
-                            ) ?? null,
-
-                        training_link_id:
-                            optionalString(
-                                body.trainingLinkId,
-                            ) ?? null,
-
-                        created_by: createdBy,
-                    })
-                    .select('*')
-                    .single();
-
-            if (insertedConversation.error) {
-                throw insertedConversation.error;
-            }
-
-            const allMemberIds = Array.from(
-                new Set([
-                    createdBy,
-                    ...memberIds,
-                ]),
+            const allMemberIds = Array.from(new Set([createdBy, ...memberIds]));
+            const membersInsert = await admin.from('conversation_members').insert(
+                allMemberIds.map((userId) => ({
+                    conversation_id: insertedConversation.data.id,
+                    user_id: userId,
+                    role: userId === createdBy ? 'admin' : 'member',
+                })),
             );
+            if (membersInsert.error) throw membersInsert.error;
 
-            const membersInsert = await admin
-                .from('conversation_members')
-                .insert(
-                    allMemberIds.map((userId) => ({
-                        conversation_id:
-                            insertedConversation.data.id,
-
-                        user_id: userId,
-
-                        role:
-                            userId === createdBy
-                                ? 'admin'
-                                : 'member',
-                    })),
-                );
-
-            if (membersInsert.error) {
-                throw membersInsert.error;
-            }
-
-            return apiSuccess(
-                insertedConversation.data,
-                201,
-            );
+            return apiSuccess(insertedConversation.data, 201);
         }
 
-        throw new ApiError(
-            'Unsupported conversation type.',
-            400,
-        );
+        throw new ApiError('Unsupported conversation type.', 400);
     } catch (error) {
         return handleError(error);
     }
