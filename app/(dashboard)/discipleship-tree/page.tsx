@@ -15,17 +15,28 @@ import {
     Space,
     Divider,
     Avatar,
+    Card,
     Descriptions,
     List,
     Typography,
     Statistic,
-    Descriptions,
     Skeleton,
     Timeline,
-    List,
-    Statistic,
     theme,
 } from "antd";
+
+import {
+    ChevronDown,
+    Mail,
+    Phone,
+    Calendar,
+    Building2,
+    Users,
+    GraduationCap,
+    X,
+    Send,
+} from "lucide-react";
+
 import {
     BookOutlined,
     EyeOutlined,
