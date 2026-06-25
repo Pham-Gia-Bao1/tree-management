@@ -1,259 +1,99 @@
 {
   "token": {
-    "colorPrimary": "#111827",
-    "colorInfo": "#2563EB",
-    "colorSuccess": "#16A34A",
-    "colorWarning": "#D97706",
-    "colorError": "#DC2626",
-    "colorText": "#111827",
-    "colorTextSecondary": "#6B7280",
-    "colorTextTertiary": "#9CA3AF",
-    "colorTextQuaternary": "#D1D5DB",
-    "colorTextDisabled": "#D1D5DB",
-    "colorBgBase": "#F5F5F4",
-    "colorBgLayout": "#F5F5F4",
+    "colorPrimary": "#18181B",
+    "colorText": "#18181B",
+    "colorTextSecondary": "#71717A",
+    "colorTextTertiary": "#A1A1AA",
+    "colorBgBase": "#F5F5F5",
+    "colorBgLayout": "#F5F5F5",
     "colorBgContainer": "#FFFFFF",
     "colorBgElevated": "#FFFFFF",
-    "colorFill": "#FAFAFA",
-    "colorFillSecondary": "#F8F8F8",
-    "colorFillTertiary": "#F3F4F6",
-    "colorFillQuaternary": "#E5E7EB",
-    "colorFillAlter": "#FAFAFA",
-    "colorBorder": "#E7E5E4",
-    "colorBorderSecondary": "#F1F1F1",
-    "borderRadius": 14,
-    "borderRadiusSM": 10,
-    "borderRadiusLG": 18,
-    "borderRadiusXS": 8,
-    "borderRadiusOuter": 22,
-    "fontFamily": "\"Inter\", \"SF Pro Display\", \"Segoe UI\", sans-serif",
+    "colorBorder": "#E5E7EB",
+    "colorBorderSecondary": "#F1F5F9",
+    "borderRadius": 6,
+    "borderRadiusSM": 4,
+    "borderRadiusLG": 8,
+    "borderRadiusXS": 2,
+    "fontFamily": "\"Inter\", sans-serif",
     "fontSize": 14,
-    "fontSizeSM": 13,
-    "fontSizeLG": 16,
-    "fontSizeXL": 20,
-    "fontSizeHeading1": 36,
-    "fontSizeHeading2": 28,
-    "fontSizeHeading3": 22,
-    "fontSizeHeading4": 18,
-    "fontSizeHeading5": 16,
-    "lineHeight": 1.6,
-    "boxShadow": "0 1px 2px rgba(0,0,0,.02)",
+    "boxShadow": "0 1px 2px rgba(0,0,0,.03)",
     "boxShadowSecondary": "0 2px 8px rgba(0,0,0,.04)",
-    "boxShadowTertiary": "0 8px 24px rgba(0,0,0,.04)",
-    "padding": 16,
-    "paddingSM": 12,
-    "paddingMD": 16,
-    "paddingLG": 24,
-    "paddingXL": 32,
-    "margin": 16,
-    "marginSM": 12,
-    "marginMD": 16,
-    "marginLG": 24,
-    "marginXL": 32,
-    "controlHeight": 42,
-    "controlHeightSM": 34,
-    "controlHeightLG": 48,
-    "controlOutline": "rgba(17,24,39,.08)",
-    "controlItemBgHover": "#F8F8F8",
-    "controlItemBgActive": "#F3F4F6",
-    "controlItemBgActiveHover": "#E5E7EB",
-    "motion": true,
-    "wireframe": false
+    "boxShadowTertiary": "0 1px 1px rgba(0,0,0,.02)",
+    "controlHeight": 40,
+    "controlHeightSM": 32,
+    "controlHeightLG": 44
   },
   "components": {
-    "Layout": {
-      "bodyBg": "#F5F5F4",
-      "headerBg": "#FFFFFF",
-      "siderBg": "#FFFFFF",
-      "footerBg": "#F5F5F4",
-      "headerHeight": 72,
-      "headerPadding": "0 24px",
-      "triggerBg": "#FFFFFF",
-      "triggerColor": "#6B7280"
+    "Card": {
+      "borderRadiusLG": 8,
+      "bodyPadding": 20
+    },
+    "Button": {
+      "borderRadius": 6,
+      "controlHeight": 40,
+      "fontWeight": 500,
+      "defaultShadow": "none",
+      "primaryShadow": "none"
+    },
+    "Input": {
+      "borderRadius": 6,
+      "controlHeight": 40,
+      "activeBorderColor": "#18181B",
+      "activeShadow": "0 0 0 2px rgba(24,24,27,.05)"
+    },
+    "InputNumber": {
+      "borderRadius": 6
+    },
+    "Select": {
+      "borderRadius": 6,
+      "controlHeight": 40,
+      "optionSelectedBg": "#F3F4F6"
+    },
+    "DatePicker": {
+      "borderRadius": 6
+    },
+    "TimePicker": {
+      "borderRadius": 6
+    },
+    "Table": {
+      "borderRadiusLG": 8,
+      "headerBg": "#FAFAFA",
+      "rowHoverBg": "#FAFAFA",
+      "borderColor": "#E5E7EB"
     },
     "Menu": {
       "itemHeight": 42,
-      "itemBorderRadius": 12,
-      "itemMarginInline": 12,
-      "itemColor": "#78716C",
-      "itemHoverColor": "#111827",
-      "itemHoverBg": "#F5F5F4",
-      "itemSelectedColor": "#111827",
+      "itemBorderRadius": 6,
       "itemSelectedBg": "#F3F4F6",
-      "subMenuItemBg": "transparent",
-      "activeBarHeight": 0,
-      "activeBarBorderWidth": 0,
-      "groupTitleColor": "#A8A29E",
-      "collapsedWidth": 72
-    },
-    "Card": {
-      "colorBgContainer": "#FFFFFF",
-      "colorBorderSecondary": "#ECECEC",
-      "borderRadiusLG": 18,
-      "boxShadowTertiary": "0 1px 2px rgba(0,0,0,.02)",
-      "headerBg": "transparent",
-      "headerHeight": 60,
-      "headerFontSize": 16,
-      "bodyPadding": 20,
-      "padding": 20
-    },
-    "Button": {
-      "borderRadius": 12,
-      "controlHeight": 42,
-      "controlHeightSM": 34,
-      "controlHeightLG": 48,
-      "fontWeight": 500,
-      "defaultShadow": "none",
-      "primaryShadow": "none",
-      "paddingInline": 18,
-      "colorPrimaryHover": "#374151",
-      "colorPrimaryActive": "#000000"
-    },
-    "Input": {
-      "borderRadius": 12,
-      "controlHeight": 42,
-      "colorBgContainer": "#FAFAFA",
-      "colorBorder": "#ECECEC",
-      "hoverBorderColor": "#D6D3D1",
-      "activeBorderColor": "#111827",
-      "activeShadow": "0 0 0 3px rgba(17,24,39,.06)"
-    },
-    "InputNumber": {
-      "borderRadius": 12,
-      "controlHeight": 42
-    },
-    "Select": {
-      "borderRadius": 12,
-      "controlHeight": 42,
-      "optionSelectedBg": "#F3F4F6",
-      "optionSelectedColor": "#111827",
-      "optionHoverBg": "#F8F8F8"
-    },
-    "DatePicker": {
-      "borderRadius": 12,
-      "controlHeight": 42
-    },
-    "TimePicker": {
-      "borderRadius": 12,
-      "controlHeight": 42
-    },
-    "Table": {
-      "headerBg": "#FAFAFA",
-      "headerColor": "#6B7280",
-      "headerSplitColor": "#F0F0F0",
-      "borderColor": "#F0F0F0",
-      "rowHoverBg": "#FAFAFA",
-      "rowSelectedBg": "#F8F8F8",
-      "rowSelectedHoverBg": "#F3F4F6",
-      "cellPaddingBlock": 16,
-      "cellPaddingInline": 18,
-      "borderRadiusLG": 16
-    },
-    "Tabs": {
-      "itemColor": "#6B7280",
-      "itemHoverColor": "#111827",
-      "itemSelectedColor": "#111827",
-      "itemActiveColor": "#111827",
-      "inkBarColor": "#111827",
-      "titleFontSize": 14,
-      "cardBg": "#FAFAFA",
-      "cardGutter": 4
-    },
-    "Tag": {
-      "borderRadiusSM": 999,
-      "defaultBg": "#F5F5F4",
-      "defaultColor": "#57534E"
+      "itemSelectedColor": "#18181B",
+      "itemColor": "#71717A"
     },
     "Modal": {
-      "borderRadiusLG": 20,
-      "headerBg": "#FFFFFF",
-      "contentBg": "#FFFFFF",
-      "titleFontSize": 18,
-      "titleColor": "#111827",
-      "boxShadow": "0 20px 60px rgba(0,0,0,.08)"
+      "borderRadiusLG": 10
     },
     "Drawer": {
-      "borderRadiusLG": 20,
-      "colorBgElevated": "#FFFFFF",
-      "footerPaddingInline": 24,
-      "footerPaddingBlock": 20
-    },
-    "Popover": {
-      "borderRadiusLG": 16,
-      "boxShadowSecondary": "0 12px 40px rgba(0,0,0,.08)"
+      "borderRadiusLG": 10
     },
     "Dropdown": {
-      "borderRadiusLG": 16,
-      "boxShadowSecondary": "0 12px 40px rgba(0,0,0,.08)"
+      "borderRadiusLG": 8
+    },
+    "Popover": {
+      "borderRadiusLG": 8
     },
     "Tooltip": {
-      "borderRadius": 10,
-      "colorBgSpotlight": "#111827"
+      "borderRadius": 4
     },
-    "Breadcrumb": {
-      "itemColor": "#A8A29E",
-      "lastItemColor": "#111827",
-      "linkColor": "#78716C",
-      "linkHoverColor": "#111827",
-      "separatorColor": "#D6D3D1"
-    },
-    "Collapse": {
-      "borderRadiusLG": 14,
-      "headerBg": "#FAFAFA",
-      "contentBg": "#FFFFFF"
-    },
-    "Descriptions": {
-      "labelBg": "#FAFAFA",
-      "itemPaddingBottom": 16,
-      "colorSplit": "#ECECEC"
-    },
-    "Alert": {
-      "borderRadiusLG": 14,
-      "withDescriptionPadding": "16px 20px"
-    },
-    "Segmented": {
-      "trackBg": "#F3F4F6",
-      "itemSelectedBg": "#FFFFFF",
-      "itemColor": "#78716C",
-      "itemSelectedColor": "#111827"
+    "Tag": {
+      "borderRadiusSM": 999
     },
     "Pagination": {
-      "itemActiveBg": "#111827",
-      "borderRadius": 10
+      "borderRadius": 6
     },
-    "Switch": {
-      "colorPrimary": "#111827"
+    "Collapse": {
+      "borderRadiusLG": 8
     },
-    "Progress": {
-      "defaultColor": "#111827",
-      "remainingColor": "#E7E5E4"
-    },
-    "Checkbox": {
-      "colorPrimary": "#111827",
-      "borderRadiusSM": 6
-    },
-    "Radio": {
-      "colorPrimary": "#111827"
-    },
-    "Divider": {
-      "colorSplit": "#ECECEC"
-    },
-    "Notification": {
-      "borderRadiusLG": 16
-    },
-    "Message": {
-      "contentBg": "#FFFFFF",
-      "borderRadiusLG": 14
-    },
-    "Badge": {
-      "colorBgContainer": "#FFFFFF"
-    },
-    "Skeleton": {
-      "gradientFromColor": "#F8F8F8",
-      "gradientToColor": "#FAFAFA"
-    },
-    "Upload": {
-      "colorBorder": "#E7E5E4"
+    "Segmented": {
+      "trackBg": "#F3F4F6"
     }
   }
 }
