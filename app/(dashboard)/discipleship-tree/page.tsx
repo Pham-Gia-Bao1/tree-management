@@ -11,15 +11,25 @@ import {
     Empty,
     message,
     Spin,
-    Card,
     Flex,
     Space,
     Divider,
-    Avatar
+    Avatar,
+    Descriptions,
+    List,
+    Typography,
+    Statistic,
 } from "antd";
 import {
     BookOutlined,
     EyeOutlined,
+    MailOutlined,
+    PhoneOutlined,
+    CalendarOutlined,
+    ApartmentOutlined,
+    TeamOutlined,
+    CloseOutlined,
+    SendOutlined,
 } from "@ant-design/icons";
 
 import {
@@ -38,26 +48,15 @@ import {
     Edge,
 } from "@xyflow/react";
 
-import {
-    Mail,
-    Phone,
-    Calendar,
-    Building2,
-    GraduationCap,
-    ChevronDown,
-    Users,
-    X,
-    Send,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import "@xyflow/react/dist/style.css";
 import { AncestorNodeRecord, MemberProfileRecord } from "@/types/member.types";
 import { TreePersonCard } from "@/components/TreePersonCard/TreePersonCard";
-import Title from "antd/es/typography/Title";
-import Text from "antd/es/typography/Text";
 
 const { Content } = Layout;
 const { Option } = Select;
+const { Title: AntTitle, Text } = Typography;
 
 // ==================== I18N ====================
 const T: Record<string, Record<string, string>> = {
@@ -65,21 +64,21 @@ const T: Record<string, Record<string, string>> = {
         selectCourse: "Chọn môn học",
         myDiagram: "Xem sơ đồ của tôi",
         messagePlaceholder: "Nhập nội dung thư tín...",
-        dragZoom: "Kéo để di chuyển · Cuộn để zoom · Click node để xem chi tiết",
+        dragZoom: "Kéo để di chuyển · Cuộn để zoom · Click node để xem nhánh · Nhấn 👁 để xem chi tiết",
         send: "Gửi",
     },
     en: {
         selectCourse: "Select course",
         myDiagram: "My Diagram",
         messagePlaceholder: "Type your message...",
-        dragZoom: "Drag to pan · Scroll to zoom · Click node for details",
+        dragZoom: "Drag to pan · Scroll to zoom · Click node to highlight branch · Click 👁 for details",
         send: "Send",
     },
     ko: {
         selectCourse: "과목 선택",
         myDiagram: "내 다이어그램",
         messagePlaceholder: "서신 내용을 입력하세요...",
-        dragZoom: "드래그로 이동 · 스크롤로 확대/축소 · 노드 클릭 시 상세 정보",
+        dragZoom: "드래그로 이동 · 스크롤로 확대/축소 · 노드 클릭 시 하위 트리 강조 · 👁 클릭 시 상세 정보",
         send: "보내기",
     },
 };
@@ -114,11 +113,29 @@ type MemberDetailResponse = {
     ancestors: AncestorNodeRecord[];
 };
 
+// ==================== SUBTREE HELPER ====================
+// Trả về tập id của node được click + toàn bộ con/cháu (subtree) của nó.
+function getSubtreeIds(links: Link[], rootId: string): Set<string> {
+    const set = new Set<string>([rootId]);
+    const queue = [rootId];
+    while (queue.length) {
+        const cur = queue.shift()!;
+        links.filter(l => l.mentorId === cur).forEach(l => {
+            if (!set.has(l.discipleId)) {
+                set.add(l.discipleId);
+                queue.push(l.discipleId);
+            }
+        });
+    }
+    return set;
+}
+
 // ==================== BUILD TREE ====================
 function buildTreeForCourse(
     links: Link[],
     memberMap: Map<string, MemberProfileRecord>,
-    focusMemberId?: string
+    focusMemberId: string | undefined,
+    onEyeClick: (memberId: string) => void
 ) {
     if (!links.length) return { nodes: [], edges: [] as Edge[] };
 
@@ -160,17 +177,22 @@ function buildTreeForCourse(
         });
     });
 
+    // Tập id thuộc nhánh (subtree) đang được highlight — null nghĩa là chưa chọn gì, hiển thị mặc định.
+    const subtreeIds = focusMemberId ? getSubtreeIds(links, focusMemberId) : null;
+
     const nodes: Node[] = [];
     const edges: Edge[] = [];
     const addedNodeIds = new Set<string>();
     const mentorSet = new Set(allMentorIds);
     const allMemberIds = new Set([...allMentorIds, ...allDiscipleIds]);
 
+    const rootInSubtree = !subtreeIds || (focusMemberId && rootIds.includes(focusMemberId));
+
     nodes.push({
         id: "root",
         type: "rootNode",
         position: { x: -110, y: -160 },
-        data: { courseName: "Môn học Kinh Thánh" },
+        data: { courseName: "Môn học Kinh Thánh", isDimmed: subtreeIds ? !rootInSubtree : false },
     });
     addedNodeIds.add("root");
 
@@ -178,6 +200,8 @@ function buildTreeForCourse(
         if (addedNodeIds.has(id)) return;
         const member = memberMap.get(id);
         const isFocus = focusMemberId === id;
+        const isInSubtree = subtreeIds ? subtreeIds.has(id) : false;
+        const isDimmed = subtreeIds ? !isInSubtree : false;
         const isMentor = mentorSet.has(id);
 
         if (isMentor) {
@@ -185,7 +209,7 @@ function buildTreeForCourse(
                 id,
                 type: "mentorNode",
                 position: posMap[id] || { x: 0, y: 0 },
-                data: { member, discipleCount: discipleCount[id] || 0, isFocus },
+                data: { member, discipleCount: discipleCount[id] || 0, isFocus, isInSubtree, isDimmed, onEyeClick },
             });
         } else {
             const link = links.find(l => l.discipleId === id);
@@ -193,39 +217,79 @@ function buildTreeForCourse(
                 id,
                 type: "discipleNode",
                 position: posMap[id] || { x: 0, y: 0 },
-                data: { member, link, isFocus },
+                data: { member, link, isFocus, isInSubtree, isDimmed, onEyeClick },
             });
         }
         addedNodeIds.add(id);
     });
 
     links.forEach(link => {
+        const highlighted = subtreeIds && subtreeIds.has(link.mentorId) && subtreeIds.has(link.discipleId);
+        const dimmed = subtreeIds && !highlighted;
         edges.push({
             id: `e_${link.id}`,
             source: link.mentorId,
             target: link.discipleId,
             type: "smoothstep",
-            animated: true,
-            markerEnd: { type: MarkerType.ArrowClosed, color: "#6366F1" },
-            style: { stroke: "#6366F1", strokeWidth: 2 },
+            animated: !dimmed,
+            zIndex: highlighted ? 10 : 0,
+            markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#6366F1" },
+            style: {
+                stroke: dimmed ? "#E2E8F0" : "#6366F1",
+                strokeWidth: highlighted ? 3 : 2,
+                opacity: dimmed ? 0.4 : 1,
+            },
             pathOptions: { borderRadius: 8 },
         } as Edge);
     });
 
     rootIds.forEach(rid => {
+        const highlighted = !subtreeIds || (subtreeIds && subtreeIds.has(rid) && rootInSubtree);
+        const dimmed = subtreeIds && !highlighted;
         edges.unshift({
             id: `root_${rid}`,
             source: "root",
             target: rid,
             type: "smoothstep",
-            markerEnd: { type: MarkerType.ArrowClosed, color: "#38BDF8" },
-            style: { stroke: "#38BDF8", strokeWidth: 2 },
+            zIndex: highlighted ? 10 : 0,
+            markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#38BDF8" },
+            style: {
+                stroke: dimmed ? "#E2E8F0" : "#38BDF8",
+                strokeWidth: 2,
+                opacity: dimmed ? 0.4 : 1,
+            },
             pathOptions: { borderRadius: 8 },
         } as Edge);
     });
 
     return { nodes, edges };
 }
+
+// ==================== EYE BUTTON ====================
+const EyeButton = ({ onClick }: { onClick: () => void }) => (
+    <button
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        title="Xem chi tiết"
+        style={{
+            position: "absolute",
+            top: 6,
+            right: 6,
+            width: 22,
+            height: 22,
+            border: "none",
+            borderRadius: 6,
+            background: "rgba(15,23,42,0.06)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "#475569",
+            padding: 0,
+        }}
+    >
+        <EyeOutlined style={{ fontSize: 12 }} />
+    </button>
+);
 
 // ==================== CUSTOM NODES ====================
 const RootNode = ({ data }: any) => (
@@ -235,6 +299,8 @@ const RootNode = ({ data }: any) => (
         fontSize: 13, fontWeight: 700,
         boxShadow: "0 4px 20px rgba(15,23,42,0.35)",
         textAlign: "center", minWidth: 200, border: "2px solid #38BDF8",
+        opacity: data.isDimmed ? 0.35 : 1,
+        transition: "opacity 0.2s",
     }}>
         <BookOutlined style={{ marginRight: 6, color: "#38BDF8" }} />
         {data.courseName}
@@ -243,19 +309,23 @@ const RootNode = ({ data }: any) => (
 );
 
 const MentorNode = ({ data }: any) => {
-    const { member, discipleCount, isFocus } = data;
+    const { member, discipleCount, isFocus, isInSubtree, isDimmed, onEyeClick } = data;
+    const borderColor = isFocus ? "#6366F1" : isInSubtree ? "#A5B4FC" : "#C7D2FE";
     return (
         <div style={{
+            position: "relative",
             background: isFocus ? "linear-gradient(135deg,#EEF2FF,#E0E7FF)" : "#fff",
-            border: `2px solid ${isFocus ? "#6366F1" : "#C7D2FE"}`,
+            border: `2px solid ${borderColor}`,
             borderRadius: 12, padding: "10px 14px", width: 196,
             boxShadow: isFocus
                 ? "0 0 0 4px #6366F130, 0 4px 16px rgba(99,102,241,0.2)"
                 : "0 2px 8px rgba(0,0,0,0.08)",
+            opacity: isDimmed ? 0.35 : 1,
             transition: "all 0.2s", cursor: "pointer",
         }}>
             <Handle type="target" position={Position.Top} style={{ background: "#6366F1", width: 9, height: 9 }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <EyeButton onClick={() => onEyeClick(member?.id)} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, paddingRight: 18 }}>
                 <Avatar size={32} style={{ background: "linear-gradient(135deg,#6366F1,#8B5CF6)", fontSize: 13, fontWeight: 700 }}>
                     {member?.fullName?.[0] || "?"}
                 </Avatar>
@@ -274,19 +344,23 @@ const MentorNode = ({ data }: any) => {
 };
 
 const DiscipleNode = ({ data }: any) => {
-    const { member, link, isFocus } = data;
+    const { member, link, isFocus, isInSubtree, isDimmed, onEyeClick } = data;
+    const borderColor = isFocus ? "#10B981" : isInSubtree ? "#6EE7B7" : "#BBF7D0";
     return (
         <div style={{
+            position: "relative",
             background: isFocus ? "linear-gradient(135deg,#F0FDF4,#DCFCE7)" : "#fff",
-            border: `2px solid ${isFocus ? "#10B981" : "#BBF7D0"}`,
+            border: `2px solid ${borderColor}`,
             borderRadius: 12, padding: "10px 14px", width: 196,
             boxShadow: isFocus
                 ? "0 0 0 4px #10B98120, 0 4px 16px rgba(16,185,129,0.15)"
                 : "0 2px 8px rgba(0,0,0,0.06)",
+            opacity: isDimmed ? 0.35 : 1,
             transition: "all 0.2s", cursor: "pointer",
         }}>
             <Handle type="target" position={Position.Top} style={{ background: "#10B981", width: 9, height: 9 }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <EyeButton onClick={() => onEyeClick(member?.id)} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, paddingRight: 18 }}>
                 <Avatar size={32} style={{ background: "linear-gradient(135deg,#10B981,#059669)", fontSize: 13, fontWeight: 700 }}>
                     {member?.fullName?.[0] || "?"}
                 </Avatar>
@@ -320,7 +394,7 @@ export default function Diagram() {
     const [focusMyself, setFocusMyself] = useState(false);
     const [currentUserId] = useState<string>("");
 
-    // FIX 1: track which member id is currently highlighted on the diagram
+    // Node đang được chọn — dùng để highlight subtree (node + line liên quan) trên diagram
     const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
     // Raw tree data so we can rebuild nodes with new highlight without re-fetching
@@ -333,7 +407,7 @@ export default function Diagram() {
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [selectedMemberDetail, setSelectedMemberDetail] = useState<MemberDetailResponse | null>(null);
 
-    // FIX 2: track which member id is being viewed in the drawer
+    // Member đang được xem trong Drawer (để highlight đúng người trong cây con của Drawer)
     const [viewingMemberId, setViewingMemberId] = useState<string | null>(null);
 
     const [messageInput, setMessageInput] = useState("");
@@ -353,13 +427,48 @@ export default function Diagram() {
             .catch(() => message.error("Không tải được danh sách môn học"));
     }, []);
 
-    // Rebuild nodes whenever focusedNodeId changes — no extra fetch needed
+    const fetchMemberDetail = useCallback(async (memberId: string) => {
+        setDrawerLoading(true);
+        setViewingMemberId(memberId);
+        try {
+            const res = await fetch(`/api/members/${memberId}?courseId=${selectedCourse}`);
+            const json = await res.json();
+            if (json.success) {
+                setSelectedMemberDetail(json.data);
+            } else {
+                message.error(json.error?.message || "Không tải được thông tin thành viên");
+            }
+        } catch {
+            message.error("Lỗi kết nối server");
+        } finally {
+            setDrawerLoading(false);
+        }
+    }, [selectedCourse]);
+
+    // Click vào nút 👁 trong node → mở Drawer + fetch chi tiết + highlight subtree của node đó
+    const onEyeClick = useCallback((memberId: string) => {
+        if (!memberId) return;
+        setFocusedNodeId(memberId);
+        setDrawerOpen(true);
+        fetchMemberDetail(memberId);
+    }, [fetchMemberDetail]);
+
+    // Click vào thân node (không phải nút eye) → chỉ highlight subtree, KHÔNG mở Drawer
+    const onNodeClick = useCallback((_: any, node: Node) => {
+        if (node.id === "root") {
+            setFocusedNodeId(null); // click root = bỏ highlight, xem toàn cây
+            return;
+        }
+        setFocusedNodeId(prev => (prev === node.id ? null : node.id)); // click lại cùng node → bỏ highlight
+    }, []);
+
+    // Rebuild nodes/edges mỗi khi focusedNodeId thay đổi — không cần fetch lại
     useEffect(() => {
         if (!treeLinks.length) return;
-        const { nodes: n, edges: e } = buildTreeForCourse(treeLinks, memberMap, focusedNodeId ?? undefined);
+        const { nodes: n, edges: e } = buildTreeForCourse(treeLinks, memberMap, focusedNodeId ?? undefined, onEyeClick);
         setNodes(n);
         setEdges(e);
-    }, [focusedNodeId, treeLinks, memberMap, setNodes, setEdges]);
+    }, [focusedNodeId, treeLinks, memberMap, onEyeClick, setNodes, setEdges]);
 
     // Load Tree (fetch)
     useEffect(() => {
@@ -380,10 +489,9 @@ export default function Diagram() {
                     );
                     setTreeLinks(links);
                     setMemberMap(map);
-                    // initial render without focus
-                    const { nodes: n, edges: e } = buildTreeForCourse(links, map, undefined);
-                    setNodes(n);
-                    setEdges(e);
+                } else {
+                    setTreeLinks([]);
+                    setMemberMap(new Map());
                 }
             } catch {
                 message.error("Lỗi tải sơ đồ");
@@ -392,36 +500,11 @@ export default function Diagram() {
             }
         };
         loadTree();
-    }, [selectedCourse, focusMyself, currentUserId, setNodes, setEdges]);
-
-    const fetchMemberDetail = useCallback(async (memberId: string) => {
-        setDrawerLoading(true);
-        setViewingMemberId(memberId);
-        try {
-            const res = await fetch(`/api/members/${memberId}?courseId=${selectedCourse}`);
-            const json = await res.json();
-            if (json.success) {
-                setSelectedMemberDetail(json.data);
-            } else {
-                message.error(json.error?.message || "Không tải được thông tin thành viên");
-            }
-        } catch {
-            message.error("Lỗi kết nối server");
-        } finally {
-            setDrawerLoading(false);
-        }
-    }, [selectedCourse]);
-
-    // FIX 1: on node click → set focusedNodeId so diagram highlights it, then open drawer
-    const onNodeClick = useCallback(async (_: any, node: Node) => {
-        if (node.id === "root") return;
-        setFocusedNodeId(node.id);   // ← highlight on diagram
-        setDrawerOpen(true);
-        await fetchMemberDetail(node.id);
-    }, [fetchMemberDetail]);
+    }, [selectedCourse, focusMyself, currentUserId]);
 
     // Clicking a person inside the drawer tree
     const handleDrawerPersonClick = useCallback(async (memberId: string) => {
+        setFocusedNodeId(memberId);
         await fetchMemberDetail(memberId);
     }, [fetchMemberDetail]);
 
@@ -429,7 +512,8 @@ export default function Diagram() {
         setDrawerOpen(false);
         setSelectedMemberDetail(null);
         setViewingMemberId(null);
-        setFocusedNodeId(null);   // clear diagram highlight when drawer closes
+        // giữ lại highlight trên diagram sau khi đóng Drawer; nếu muốn bỏ luôn thì mở comment dưới
+        // setFocusedNodeId(null);
     }, []);
 
     const sendMessage = async () => {
@@ -500,146 +584,194 @@ export default function Diagram() {
                         <Controls />
                         <MiniMap />
                         <Panel position="top-right">
-                            <div style={{ background: "#fff", padding: "6px 12px", borderRadius: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
-                                💡 {t.dragZoom}
+                            <div style={{ background: "#fff", padding: "6px 12px", borderRadius: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", fontSize: 12 }}>
+                                {t.dragZoom}
                             </div>
                         </Panel>
                     </ReactFlow>
                 </Content>
             </Layout>
 
-            {/* ==================== DRAWER ==================== */}
+            {/* ==================== DRAWER (gọn gàng, dùng antd) ==================== */}
             <Drawer
                 open={drawerOpen}
                 onClose={closeDrawer}
                 placement="right"
                 closable={false}
-                size="large"
+                width={400}
+                styles={{ body: { padding: 0 } }}
             >
                 {drawerLoading && !selectedMemberDetail ? (
                     <Flex justify="center" align="center" style={{ height: "100%" }}>
                         <Spin size="large" />
                     </Flex>
                 ) : selectedMemberDetail ? (
-                    <Flex vertical gap={24}>
-                        {/* Header */}
-                        <Card styles={{ body: { background: "linear-gradient(135deg,#4F46E5 0%, #7C3AED 100%)", color: "#fff" } }}>
-                            <Flex justify="space-between" align="flex-start">
-                                <Space size={16} align="start">
-                                    <Avatar size={72}>
-                                        {selectedMemberDetail.member.fullName?.[0]}
-                                    </Avatar>
-                                    <Flex vertical gap={4}>
-                                        <Title level={3} style={{ color: "#fff", margin: 0 }}>
-                                            {selectedMemberDetail.member.fullName}
-                                        </Title>
-                                        <Text style={{ color: "#E2E8F0" }}>
-                                            {selectedMemberDetail.member.branchName}
-                                        </Text>
-                                        <Space wrap>
-                                            {selectedMemberDetail.member.roles?.map(role => (
-                                                <Tag key={role} color="processing">{role}</Tag>
-                                            ))}
-                                        </Space>
-                                    </Flex>
+                    <Flex vertical style={{ height: "100%" }}>
+                        {/* Header gọn: avatar + tên + role */}
+                        <Flex
+                            align="center"
+                            gap={12}
+                            style={{
+                                padding: "16px 20px",
+                                background: "linear-gradient(135deg,#4F46E5 0%, #7C3AED 100%)",
+                                color: "#fff",
+                            }}
+                        >
+                            <Avatar size={48} style={{ background: "rgba(255,255,255,0.2)", fontWeight: 700 }}>
+                                {selectedMemberDetail.member.fullName?.[0]}
+                            </Avatar>
+                            <Flex vertical flex={1} gap={2} style={{ minWidth: 0 }}>
+                                <AntTitle level={5} style={{ color: "#fff", margin: 0, lineHeight: 1.3 }} ellipsis>
+                                    {selectedMemberDetail.member.fullName}
+                                </AntTitle>
+                                <Text style={{ color: "#E0E7FF", fontSize: 12 }} ellipsis>
+                                    {selectedMemberDetail.member.branchName}
+                                </Text>
+                                <Space size={4} wrap style={{ marginTop: 2 }}>
+                                    {selectedMemberDetail.member.roles?.map(role => (
+                                        <Tag key={role} color="processing" style={{ fontSize: 10, margin: 0, lineHeight: "16px" }}>
+                                            {role}
+                                        </Tag>
+                                    ))}
                                 </Space>
-                                <Button type="text" icon={<X size={18} />} onClick={closeDrawer} />
                             </Flex>
-                        </Card>
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<CloseOutlined style={{ color: "#fff" }} />}
+                                onClick={closeDrawer}
+                            />
+                        </Flex>
 
-                        {/* Profile */}
-                        <Card title="Thông tin cá nhân">
-                            <Flex vertical gap={20}>
-                                {[
-                                    { icon: <Mail size={16} />, label: "Email", value: selectedMemberDetail.member.email },
-                                    { icon: <Phone size={16} />, label: "Phone", value: selectedMemberDetail.member.phone },
-                                    { icon: <Calendar size={16} />, label: "Birth Date", value: selectedMemberDetail.member.birthDate },
-                                    { icon: <Building2 size={16} />, label: "Branch", value: selectedMemberDetail.member.branchName },
-                                ].map(({ icon, label, value }) => (
-                                    <Flex key={label} justify="space-between">
-                                        <Space>{icon}<Text strong>{label}</Text></Space>
-                                        <Text>{value}</Text>
-                                    </Flex>
-                                ))}
-                            </Flex>
-                        </Card>
+                        {/* Nội dung scroll được */}
+                        <Flex vertical style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }} gap={16}>
+                            {/* Thông tin cá nhân — Descriptions gọn, 1 cột */}
+                            <Descriptions
+                                size="small"
+                                column={1}
+                                styles={{ label: { width: 90, color: "#64748B", fontSize: 12 }, content: { fontSize: 12 } }}
+                            >
+                                <Descriptions.Item label={<Space size={6}><MailOutlined />Email</Space>}>
+                                    {selectedMemberDetail.member.email || "—"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={6}><PhoneOutlined />SĐT</Space>}>
+                                    {selectedMemberDetail.member.phone || "—"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={6}><CalendarOutlined />Sinh ngày</Space>}>
+                                    {selectedMemberDetail.member.birthDate || "—"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={6}><ApartmentOutlined />Chi nhánh</Space>}>
+                                    {selectedMemberDetail.member.branchName || "—"}
+                                </Descriptions.Item>
+                            </Descriptions>
 
-                        {/* Tree — FIX 2: pass viewingMemberId to highlight the correct person */}
-                        <Card title={<Space><Users size={18} /><span>Cây Môn Đồ</span></Space>}>
-                            <Flex vertical gap={12}>
-                                {selectedMemberDetail.ancestors?.slice().reverse().map(item => (
-                                    <React.Fragment key={item.member.id}>
-                                        <TreePersonCard
-                                            member={item.member}
-                                            // FIX 2: highlight if this ancestor is the one being viewed
-                                            active={item.member.id === viewingMemberId}
-                                            onClick={() => handleDrawerPersonClick(item.member.id)}
-                                        />
-                                        <Flex justify="center"><ChevronDown size={18} /></Flex>
-                                    </React.Fragment>
-                                ))}
+                            <Divider style={{ margin: 0 }} />
 
-                                {/* FIX 2: highlight the root member only if they are the one being viewed */}
-                                <TreePersonCard
-                                    member={selectedMemberDetail.member}
-                                    active={selectedMemberDetail.member.id === viewingMemberId}
-                                    onClick={() => handleDrawerPersonClick(selectedMemberDetail.member.id)}
-                                />
+                            {/* Cây môn đồ — List antd, gọn */}
+                            <div>
+                                <Space size={6} style={{ marginBottom: 8 }}>
+                                    <TeamOutlined style={{ color: "#6366F1" }} />
+                                    <Text strong style={{ fontSize: 13 }}>Cây môn đồ</Text>
+                                </Space>
 
-                                {selectedMemberDetail.descendants.length > 0 && (
-                                    <Flex justify="center"><ChevronDown size={18} /></Flex>
-                                )}
-
-                                {selectedMemberDetail.descendants.length === 0 ? (
-                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có môn đồ" />
-                                ) : (
-                                    <Flex vertical gap={10}>
-                                        {selectedMemberDetail.descendants.map(item => (
+                                <Flex vertical gap={6}>
+                                    {selectedMemberDetail.ancestors?.slice().reverse().map(item => (
+                                        <React.Fragment key={item.member.id}>
                                             <TreePersonCard
-                                                key={item.member.id}
                                                 member={item.member}
-                                                level={item.level}
-                                                // FIX 2: highlight if this descendant is the one being viewed
                                                 active={item.member.id === viewingMemberId}
                                                 onClick={() => handleDrawerPersonClick(item.member.id)}
                                             />
-                                        ))}
-                                    </Flex>
-                                )}
-                            </Flex>
-                        </Card>
-
-                        {/* Stats */}
-                        {selectedMemberDetail.mentorStats.length > 0 && (
-                            <Card title={<Space><GraduationCap size={18} /><span>Thống kê đào tạo</span></Space>}>
-                                <Flex vertical>
-                                    {selectedMemberDetail.mentorStats.map((stat, index) => (
-                                        <React.Fragment key={stat.courseId}>
-                                            <Flex justify="space-between" align="center">
-                                                <Text>{stat.courseName}</Text>
-                                                <Tag color="blue">{stat.totalDisciples}</Tag>
-                                            </Flex>
-                                            {index !== selectedMemberDetail.mentorStats.length - 1 && <Divider />}
+                                            <Flex justify="center"><ChevronDown size={14} color="#CBD5E1" /></Flex>
                                         </React.Fragment>
                                     ))}
-                                </Flex>
-                            </Card>
-                        )}
 
-                        {/* Message */}
-                        <Card title="Thư tín">
-                            <Space.Compact block>
-                                <Input
-                                    value={messageInput}
-                                    onChange={e => setMessageInput(e.target.value)}
-                                    onPressEnter={sendMessage}
-                                    placeholder={t.messagePlaceholder}
-                                />
-                                <Button type="primary" icon={<Send size={16} />} onClick={sendMessage}>
-                                    {t.send}
-                                </Button>
-                            </Space.Compact>
-                        </Card>
+                                    <TreePersonCard
+                                        member={selectedMemberDetail.member}
+                                        active={selectedMemberDetail.member.id === viewingMemberId}
+                                        onClick={() => handleDrawerPersonClick(selectedMemberDetail.member.id)}
+                                    />
+
+                                    {selectedMemberDetail.descendants.length > 0 && (
+                                        <Flex justify="center"><ChevronDown size={14} color="#CBD5E1" /></Flex>
+                                    )}
+
+                                    {selectedMemberDetail.descendants.length === 0 ? (
+                                        <Empty
+                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                            description={<Text style={{ fontSize: 12 }}>Chưa có môn đồ</Text>}
+                                            style={{ margin: "8px 0" }}
+                                        />
+                                    ) : (
+                                        <List
+                                            size="small"
+                                            dataSource={selectedMemberDetail.descendants}
+                                            split={false}
+                                            renderItem={(item) => (
+                                                <List.Item style={{ padding: "2px 0", border: "none" }}>
+                                                    <TreePersonCard
+                                                        member={item.member}
+                                                        level={item.level}
+                                                        active={item.member.id === viewingMemberId}
+                                                        onClick={() => handleDrawerPersonClick(item.member.id)}
+                                                    />
+                                                </List.Item>
+                                            )}
+                                        />
+                                    )}
+                                </Flex>
+                            </div>
+
+                            {/* Thống kê đào tạo — Statistic gọn */}
+                            {selectedMemberDetail.mentorStats.length > 0 && (
+                                <>
+                                    <Divider style={{ margin: 0 }} />
+                                    <div>
+                                        <Text strong style={{ fontSize: 13, display: "block", marginBottom: 8 }}>
+                                            Thống kê đào tạo
+                                        </Text>
+                                        <Flex wrap gap={8}>
+                                            {selectedMemberDetail.mentorStats.map(stat => (
+                                                <Flex
+                                                    key={stat.courseId}
+                                                    vertical
+                                                    style={{
+                                                        background: "#F8FAFC",
+                                                        border: "1px solid #E2E8F0",
+                                                        borderRadius: 8,
+                                                        padding: "8px 12px",
+                                                        minWidth: 120,
+                                                    }}
+                                                >
+                                                    <Text style={{ fontSize: 11, color: "#64748B" }}>{stat.courseName}</Text>
+                                                    <Statistic
+                                                        value={stat.totalDisciples}
+                                                        suffix="môn đồ"
+                                                        valueStyle={{ fontSize: 16 }}
+                                                    />
+                                                </Flex>
+                                            ))}
+                                        </Flex>
+                                    </div>
+                                </>
+                            )}
+                        </Flex>
+
+                        {/* Thư tín — cố định dưới đáy Drawer */}
+                        <Flex
+                            style={{ padding: "12px 20px", borderTop: "1px solid #F1F5F9" }}
+                            gap={8}
+                        >
+                            <Input
+                                value={messageInput}
+                                onChange={e => setMessageInput(e.target.value)}
+                                onPressEnter={sendMessage}
+                                placeholder={t.messagePlaceholder}
+                            />
+                            <Button type="primary" icon={<SendOutlined />} onClick={sendMessage}>
+                                {t.send}
+                            </Button>
+                        </Flex>
                     </Flex>
                 ) : null}
             </Drawer>
