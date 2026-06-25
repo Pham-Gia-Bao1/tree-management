@@ -204,14 +204,24 @@ function buildTreeForCourse(
             id: `e_${link.id}`,
             source: link.mentorId,
             target: link.discipleId,
+            type: "smoothstep",
+            pathOptions: { borderRadius: 8 },
             animated: true,
-            markerEnd: { type: MarkerType.ArrowClosed },
+            markerEnd: { type: MarkerType.ArrowClosed, color: "#6366F1" },
             style: { stroke: "#6366F1", strokeWidth: 2 },
         });
     });
 
     rootIds.forEach(rid => {
-        edges.unshift({ id: `root_${rid}`, source: "root", target: rid, markerEnd: { type: MarkerType.ArrowClosed } });
+        edges.unshift({
+            id: `root_${rid}`,
+            source: "root",
+            target: rid,
+            type: "smoothstep",
+            pathOptions: { borderRadius: 8 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: "#38BDF8" },
+            style: { stroke: "#38BDF8", strokeWidth: 2 },
+        });
     });
 
     return { nodes, edges };
