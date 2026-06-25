@@ -19,6 +19,12 @@ import {
     List,
     Typography,
     Statistic,
+    Descriptions,
+    Skeleton,
+    Timeline,
+    List,
+    Statistic,
+    theme,
 } from "antd";
 import {
     BookOutlined,
@@ -57,6 +63,7 @@ import { TreePersonCard } from "@/components/TreePersonCard/TreePersonCard";
 const { Content } = Layout;
 const { Option } = Select;
 const { Title: AntTitle, Text } = Typography;
+
 
 // ==================== I18N ====================
 const T: Record<string, Record<string, string>> = {
@@ -388,6 +395,7 @@ const nodeTypes = { rootNode: RootNode, mentorNode: MentorNode, discipleNode: Di
 export default function Diagram() {
     const [lang] = useState<"vi" | "en" | "ko">("vi");
     const t = T[lang];
+    const { token } = theme.useToken();
 
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedCourse, setSelectedCourse] = useState("");
@@ -593,188 +601,289 @@ export default function Diagram() {
             </Layout>
 
             {/* ==================== DRAWER (gọn gàng, dùng antd) ==================== */}
-            <Drawer
-                open={drawerOpen}
-                onClose={closeDrawer}
-                placement="right"
-                closable={false}
-                width={400}
-                styles={{ body: { padding: 0 } }}
+           <Drawer
+    open={drawerOpen}
+    onClose={closeDrawer}
+    placement="right"
+    width={600}
+    destroyOnClose
+    title={
+        selectedMemberDetail && (
+            <Space size={16}>
+                <Avatar
+                    size={52}
+                    style={{
+                        background: token.colorPrimary,
+                        fontWeight: 700,
+                    }}
+                >
+                    {selectedMemberDetail.member.fullName?.[0]}
+                </Avatar>
+
+                <Flex vertical gap={0}>
+                    <Title level={5} style={{ margin: 0 }}>
+                        {selectedMemberDetail.member.fullName}
+                    </Title>
+
+                    <Text type="secondary">
+                        {selectedMemberDetail.member.branchName}
+                    </Text>
+                </Flex>
+            </Space>
+        )
+    }
+    extra={
+        <Button
+            type="text"
+            icon={<X size={18} />}
+            onClick={closeDrawer}
+        />
+    }
+>
+    {drawerLoading ? (
+        <Flex vertical gap={20}>
+            <Skeleton.Avatar active size={80} />
+            <Skeleton active paragraph={{ rows: 4 }} />
+            <Skeleton active paragraph={{ rows: 6 }} />
+            <Skeleton active paragraph={{ rows: 3 }} />
+        </Flex>
+    ) : selectedMemberDetail ? (
+        <Flex vertical gap={20}>
+            {/* HERO */}
+            <Card
+                bordered={false}
+                styles={{
+                    body: {
+                        borderRadius: token.borderRadiusLG,
+                        background: token.colorBgContainerSecondary,
+                        boxShadow: token.boxShadowSecondary,
+                    },
+                }}
             >
-                {drawerLoading && !selectedMemberDetail ? (
-                    <Flex justify="center" align="center" style={{ height: "100%" }}>
-                        <Spin size="large" />
+                <Flex gap={20} align="center">
+                    <Avatar
+                        size={84}
+                        style={{
+                            background: token.colorPrimary,
+                            fontSize: 28,
+                            fontWeight: 700,
+                        }}
+                    >
+                        {selectedMemberDetail.member.fullName?.[0]}
+                    </Avatar>
+
+                    <Flex vertical flex={1}>
+                        <Title level={3} style={{ margin: 0 }}>
+                            {selectedMemberDetail.member.fullName}
+                        </Title>
+
+                        <Text type="secondary">
+                            {selectedMemberDetail.member.email}
+                        </Text>
+
+                        <Space wrap style={{ marginTop: 12 }}>
+                            {selectedMemberDetail.member.roles?.map(role => (
+                                <Tag key={role} color="processing">
+                                    {role}
+                                </Tag>
+                            ))}
+                        </Space>
                     </Flex>
-                ) : selectedMemberDetail ? (
-                    <Flex vertical style={{ height: "100%" }}>
-                        {/* Header gọn: avatar + tên + role */}
-                        <Flex
-                            align="center"
-                            gap={12}
-                            style={{
-                                padding: "16px 20px",
-                                background: "linear-gradient(135deg,#4F46E5 0%, #7C3AED 100%)",
-                                color: "#fff",
-                            }}
-                        >
-                            <Avatar size={48} style={{ background: "rgba(255,255,255,0.2)", fontWeight: 700 }}>
-                                {selectedMemberDetail.member.fullName?.[0]}
-                            </Avatar>
-                            <Flex vertical flex={1} gap={2} style={{ minWidth: 0 }}>
-                                <AntTitle level={5} style={{ color: "#fff", margin: 0, lineHeight: 1.3 }} ellipsis>
-                                    {selectedMemberDetail.member.fullName}
-                                </AntTitle>
-                                <Text style={{ color: "#E0E7FF", fontSize: 12 }} ellipsis>
-                                    {selectedMemberDetail.member.branchName}
-                                </Text>
-                                <Space size={4} wrap style={{ marginTop: 2 }}>
-                                    {selectedMemberDetail.member.roles?.map(role => (
-                                        <Tag key={role} color="processing" style={{ fontSize: 10, margin: 0, lineHeight: "16px" }}>
-                                            {role}
-                                        </Tag>
-                                    ))}
+                </Flex>
+            </Card>
+
+            {/* PROFILE */}
+            <Card title="Thông tin cá nhân">
+                <Descriptions
+                    column={1}
+                    size="middle"
+                    colon={false}
+                    items={[
+                        {
+                            key: "email",
+                            label: (
+                                <Space>
+                                    <Mail size={16} />
+                                    Email
                                 </Space>
-                            </Flex>
-                            <Button
-                                type="text"
-                                size="small"
-                                icon={<CloseOutlined style={{ color: "#fff" }} />}
-                                onClick={closeDrawer}
-                            />
-                        </Flex>
-
-                        {/* Nội dung scroll được */}
-                        <Flex vertical style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }} gap={16}>
-                            {/* Thông tin cá nhân — Descriptions gọn, 1 cột */}
-                            <Descriptions
-                                size="small"
-                                column={1}
-                                styles={{ label: { width: 90, color: "#64748B", fontSize: 12 }, content: { fontSize: 12 } }}
-                            >
-                                <Descriptions.Item label={<Space size={6}><MailOutlined />Email</Space>}>
-                                    {selectedMemberDetail.member.email || "—"}
-                                </Descriptions.Item>
-                                <Descriptions.Item label={<Space size={6}><PhoneOutlined />SĐT</Space>}>
-                                    {selectedMemberDetail.member.phone || "—"}
-                                </Descriptions.Item>
-                                <Descriptions.Item label={<Space size={6}><CalendarOutlined />Sinh ngày</Space>}>
-                                    {selectedMemberDetail.member.birthDate || "—"}
-                                </Descriptions.Item>
-                                <Descriptions.Item label={<Space size={6}><ApartmentOutlined />Chi nhánh</Space>}>
-                                    {selectedMemberDetail.member.branchName || "—"}
-                                </Descriptions.Item>
-                            </Descriptions>
-
-                            <Divider style={{ margin: 0 }} />
-
-                            {/* Cây môn đồ — List antd, gọn */}
-                            <div>
-                                <Space size={6} style={{ marginBottom: 8 }}>
-                                    <TeamOutlined style={{ color: "#6366F1" }} />
-                                    <Text strong style={{ fontSize: 13 }}>Cây môn đồ</Text>
+                            ),
+                            children:
+                                selectedMemberDetail.member.email || "-",
+                        },
+                        {
+                            key: "phone",
+                            label: (
+                                <Space>
+                                    <Phone size={16} />
+                                    Điện thoại
                                 </Space>
+                            ),
+                            children:
+                                selectedMemberDetail.member.phone || "-",
+                        },
+                        {
+                            key: "birth",
+                            label: (
+                                <Space>
+                                    <Calendar size={16} />
+                                    Ngày sinh
+                                </Space>
+                            ),
+                            children:
+                                selectedMemberDetail.member.birthDate || "-",
+                        },
+                        {
+                            key: "branch",
+                            label: (
+                                <Space>
+                                    <Building2 size={16} />
+                                    Chi hội
+                                </Space>
+                            ),
+                            children:
+                                selectedMemberDetail.member.branchName || "-",
+                        },
+                    ]}
+                />
+            </Card>
 
-                                <Flex vertical gap={6}>
-                                    {selectedMemberDetail.ancestors?.slice().reverse().map(item => (
-                                        <React.Fragment key={item.member.id}>
-                                            <TreePersonCard
-                                                member={item.member}
-                                                active={item.member.id === viewingMemberId}
-                                                onClick={() => handleDrawerPersonClick(item.member.id)}
-                                            />
-                                            <Flex justify="center"><ChevronDown size={14} color="#CBD5E1" /></Flex>
-                                        </React.Fragment>
-                                    ))}
+            {/* TREE */}
+            <Card
+                title={
+                    <Space>
+                        <Users size={18} />
+                        <span>Cây Môn Đồ</span>
+                    </Space>
+                }
+            >
+                {selectedMemberDetail.ancestors.length === 0 &&
+                    selectedMemberDetail.descendants.length === 0 ? (
+                    <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="Chưa có dữ liệu"
+                    />
+                ) : (
+                    <Timeline
+                        items={[
+                            ...selectedMemberDetail.ancestors
+                                .slice()
+                                .reverse()
+                                .map(item => ({
+                                    children: (
+                                        <TreePersonCard
+                                            member={item.member}
+                                            active={
+                                                item.member.id ===
+                                                viewingMemberId
+                                            }
+                                            onClick={() =>
+                                                handleDrawerPersonClick(
+                                                    item.member.id
+                                                )
+                                            }
+                                        />
+                                    ),
+                                })),
 
+                            {
+                                color: token.colorPrimary,
+                                children: (
                                     <TreePersonCard
-                                        member={selectedMemberDetail.member}
-                                        active={selectedMemberDetail.member.id === viewingMemberId}
-                                        onClick={() => handleDrawerPersonClick(selectedMemberDetail.member.id)}
+                                        member={
+                                            selectedMemberDetail.member
+                                        }
+                                        active={
+                                            selectedMemberDetail.member.id ===
+                                            viewingMemberId
+                                        }
+                                        onClick={() =>
+                                            handleDrawerPersonClick(
+                                                selectedMemberDetail.member.id
+                                            )
+                                        }
                                     />
+                                ),
+                            },
 
-                                    {selectedMemberDetail.descendants.length > 0 && (
-                                        <Flex justify="center"><ChevronDown size={14} color="#CBD5E1" /></Flex>
-                                    )}
-
-                                    {selectedMemberDetail.descendants.length === 0 ? (
-                                        <Empty
-                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                            description={<Text style={{ fontSize: 12 }}>Chưa có môn đồ</Text>}
-                                            style={{ margin: "8px 0" }}
+                            ...selectedMemberDetail.descendants.map(
+                                item => ({
+                                    children: (
+                                        <TreePersonCard
+                                            member={item.member}
+                                            level={item.level}
+                                            active={
+                                                item.member.id ===
+                                                viewingMemberId
+                                            }
+                                            onClick={() =>
+                                                handleDrawerPersonClick(
+                                                    item.member.id
+                                                )
+                                            }
                                         />
-                                    ) : (
-                                        <List
-                                            size="small"
-                                            dataSource={selectedMemberDetail.descendants}
-                                            split={false}
-                                            renderItem={(item) => (
-                                                <List.Item style={{ padding: "2px 0", border: "none" }}>
-                                                    <TreePersonCard
-                                                        member={item.member}
-                                                        level={item.level}
-                                                        active={item.member.id === viewingMemberId}
-                                                        onClick={() => handleDrawerPersonClick(item.member.id)}
-                                                    />
-                                                </List.Item>
-                                            )}
-                                        />
-                                    )}
-                                </Flex>
-                            </div>
+                                    ),
+                                })
+                            ),
+                        ]}
+                    />
+                )}
+            </Card>
 
-                            {/* Thống kê đào tạo — Statistic gọn */}
-                            {selectedMemberDetail.mentorStats.length > 0 && (
-                                <>
-                                    <Divider style={{ margin: 0 }} />
-                                    <div>
-                                        <Text strong style={{ fontSize: 13, display: "block", marginBottom: 8 }}>
-                                            Thống kê đào tạo
-                                        </Text>
-                                        <Flex wrap gap={8}>
-                                            {selectedMemberDetail.mentorStats.map(stat => (
-                                                <Flex
-                                                    key={stat.courseId}
-                                                    vertical
-                                                    style={{
-                                                        background: "#F8FAFC",
-                                                        border: "1px solid #E2E8F0",
-                                                        borderRadius: 8,
-                                                        padding: "8px 12px",
-                                                        minWidth: 120,
-                                                    }}
-                                                >
-                                                    <Text style={{ fontSize: 11, color: "#64748B" }}>{stat.courseName}</Text>
-                                                    <Statistic
-                                                        value={stat.totalDisciples}
-                                                        suffix="môn đồ"
-                                                        valueStyle={{ fontSize: 16 }}
-                                                    />
-                                                </Flex>
-                                            ))}
-                                        </Flex>
-                                    </div>
-                                </>
-                            )}
-                        </Flex>
+            {/* STATS */}
+            {selectedMemberDetail.mentorStats.length > 0 && (
+                <Card
+                    title={
+                        <Space>
+                            <GraduationCap size={18} />
+                            <span>Thống kê đào tạo</span>
+                        </Space>
+                    }
+                >
+                    <List
+                        dataSource={selectedMemberDetail.mentorStats}
+                        renderItem={stat => (
+                            <List.Item>
+                                <Statistic
+                                    title={stat.courseName}
+                                    value={stat.totalDisciples}
+                                    suffix="môn đồ"
+                                />
+                            </List.Item>
+                        )}
+                    />
+                </Card>
+            )}
 
-                        {/* Thư tín — cố định dưới đáy Drawer */}
-                        <Flex
-                            style={{ padding: "12px 20px", borderTop: "1px solid #F1F5F9" }}
-                            gap={8}
+            {/* MESSAGE */}
+            <Card title="Thư tín">
+                <Flex vertical gap={12}>
+                    <Input.TextArea
+                        rows={4}
+                        value={messageInput}
+                        onChange={e =>
+                            setMessageInput(e.target.value)
+                        }
+                        placeholder={t.messagePlaceholder}
+                        showCount
+                        maxLength={500}
+                    />
+
+                    <Flex justify="end">
+                        <Button
+                            type="primary"
+                            icon={<Send size={16} />}
+                            onClick={sendMessage}
                         >
-                            <Input
-                                value={messageInput}
-                                onChange={e => setMessageInput(e.target.value)}
-                                onPressEnter={sendMessage}
-                                placeholder={t.messagePlaceholder}
-                            />
-                            <Button type="primary" icon={<SendOutlined />} onClick={sendMessage}>
-                                {t.send}
-                            </Button>
-                        </Flex>
+                            {t.send}
+                        </Button>
                     </Flex>
-                ) : null}
-            </Drawer>
+                </Flex>
+            </Card>
+        </Flex>
+    ) : (
+        <Empty description="Không có dữ liệu" />
+    )}
+</Drawer>
         </div>
     );
 }
