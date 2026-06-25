@@ -205,11 +205,11 @@ function buildTreeForCourse(
             source: link.mentorId,
             target: link.discipleId,
             type: "smoothstep",
-            pathOptions: { borderRadius: 8 },
             animated: true,
             markerEnd: { type: MarkerType.ArrowClosed, color: "#6366F1" },
             style: { stroke: "#6366F1", strokeWidth: 2 },
-        });
+            pathOptions: { borderRadius: 8 },
+        } as Edge);
     });
 
     rootIds.forEach(rid => {
@@ -218,10 +218,10 @@ function buildTreeForCourse(
             source: "root",
             target: rid,
             type: "smoothstep",
-            pathOptions: { borderRadius: 8 },
             markerEnd: { type: MarkerType.ArrowClosed, color: "#38BDF8" },
             style: { stroke: "#38BDF8", strokeWidth: 2 },
-        });
+            pathOptions: { borderRadius: 8 },
+        } as Edge);
     });
 
     return { nodes, edges };
