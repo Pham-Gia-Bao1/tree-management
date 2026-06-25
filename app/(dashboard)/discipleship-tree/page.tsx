@@ -65,7 +65,6 @@ import {
     Edge,
 } from "@xyflow/react";
 
-import { ChevronDown } from "lucide-react";
 
 import "@xyflow/react/dist/style.css";
 import { AncestorNodeRecord, MemberProfileRecord } from "@/types/member.types";
