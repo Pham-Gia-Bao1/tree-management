@@ -43,7 +43,13 @@ interface ConversationListItem {
     title: string;
     avatarUrl: string | null;
     type: ConversationType;
-    otherUserId: string | null;
+    /**
+     * NOTE: `GET /api/conversations` does not currently return this field
+     * (see api/conversations/route.ts — ConversationListItem there has no
+     * `otherUserId`). Kept optional so the per-row online dot just degrades
+     * gracefully instead of silently breaking type-safety.
+     */
+    otherUserId?: string | null;
     lastMessage: string | null;
     lastMessageAt: string | null;
     unreadCount: number;
@@ -91,6 +97,14 @@ interface MessageRecord {
     updatedAt: string;
 }
 
+interface MessagesPage_ {
+    messages: MessageRecord[];
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+}
+
 interface CurrentUser {
     id: string;
     fullName: string;
@@ -102,6 +116,49 @@ const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
 );
+
+/* --------------------------- API envelope helper --------------------------- */
+
+/**
+ * All API routes in this project respond via `apiSuccess(data)` / `apiFailure(message, status)`,
+ * which (per the shared convention used across every route.ts file) wrap the payload as
+ * `{ success: true, data }` on success or `{ success: false, message }` on failure.
+ *
+ * Previously every fetch call in this page reached into `payload.data` manually and
+ * swallowed errors with a bare `catch {}` — so if a route ever failed (403 not-a-member,
+ * 404, validation error, etc.) the UI just silently kept showing stale/empty state with
+ * zero indication of *why*. That is the main reason messages could appear to "not load":
+ * the request was failing, but the failure was invisible.
+ *
+ * This helper centralizes parsing + error surfacing so every caller gets a real Error
+ * with a real message (and a console.error trail) instead of a swallowed exception.
+ */
+async function unwrapApi<T>(res: Response): Promise<T> {
+    let body: unknown = null;
+    try {
+        body = await res.json();
+    } catch {
+        // empty/non-JSON body — fall through to status-based error below
+    }
+
+    const asRecord = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+
+    if (!res.ok) {
+        const message =
+            (asRecord?.message as string | undefined) ??
+            (asRecord?.error as string | undefined) ??
+            `Request failed (HTTP ${res.status})`;
+        console.error('[API ERROR]', res.url, res.status, body);
+        throw new Error(message);
+    }
+
+    // Support the standard `{ success, data }` envelope, but also fall back to a raw body
+    // in case a given route ever returns the payload unwrapped.
+    if (asRecord && 'data' in asRecord) {
+        return asRecord.data as T;
+    }
+    return body as T;
+}
 
 /* ------------------------------- Page ------------------------------- */
 
@@ -142,11 +199,11 @@ export default function MessagesPage() {
         void (async () => {
             try {
                 const res = await fetch('/api/auth/me');
-                if (!res.ok) return;
-                const payload = await res.json();
-                setCurrentUser({ id: payload.data.id, fullName: payload.data.fullName });
-            } catch {
-                // not authenticated
+                const me = await unwrapApi<{ id: string; fullName: string }>(res);
+                setCurrentUser({ id: me.id, fullName: me.fullName });
+            } catch (err) {
+                console.error('[auth/me]', err);
+                // not authenticated — leave currentUser null, conversation list simply won't load
             }
         })();
     }, []);
@@ -156,11 +213,11 @@ export default function MessagesPage() {
         setLoadingConversations(true);
         try {
             const res = await fetch(`/api/conversations?userId=${currentUser.id}`);
-            if (!res.ok) throw new Error();
-            const payload = await res.json();
-            setConversations(payload.data ?? []);
-        } catch {
-            toast.error('Failed to load conversations');
+            const data = await unwrapApi<ConversationListItem[]>(res);
+            setConversations(data ?? []);
+        } catch (err) {
+            console.error('[loadConversations]', err);
+            toast.error(err instanceof Error ? err.message : 'Failed to load conversations');
         } finally {
             setLoadingConversations(false);
         }
@@ -175,11 +232,11 @@ export default function MessagesPage() {
     const loadConversationDetail = useCallback(async (conversationId: string) => {
         try {
             const res = await fetch(`/api/conversations/${conversationId}`);
-            if (!res.ok) throw new Error();
-            const payload = await res.json();
-            setConversationDetail(payload.data);
-        } catch {
-            toast.error('Failed to load conversation details');
+            const data = await unwrapApi<ConversationDetail>(res);
+            setConversationDetail(data);
+        } catch (err) {
+            console.error('[loadConversationDetail]', err);
+            toast.error(err instanceof Error ? err.message : 'Failed to load conversation details');
         }
     }, [toast]);
 
@@ -187,17 +244,27 @@ export default function MessagesPage() {
         if (!currentUser) return;
         setLoadingMessages(true);
         try {
-            const res = await fetch(`/api/conversations/${conversationId}/messages?userId=${currentUser.id}&page=1&limit=50`);
-            if (!res.ok) throw new Error();
-            const payload = await res.json();
-            setMessages(payload.data?.messages ?? []);
-        } catch {
-            toast.error('Failed to load messages');
+            const res = await fetch(
+                `/api/conversations/${conversationId}/messages?userId=${currentUser.id}&page=1&limit=50`,
+            );
+            const data = await unwrapApi<MessagesPage_>(res);
+            setMessages(data?.messages ?? []);
+        } catch (err) {
+            console.error('[loadMessages]', err);
+            toast.error(err instanceof Error ? err.message : 'Failed to load messages');
+            setMessages([]);
         } finally {
             setLoadingMessages(false);
         }
     }, [currentUser, toast]);
 
+    /**
+     * NOTE: `/api/conversations/[id]/read` does not exist in the provided API routes
+     * (only `route.ts`, `[id]/route.ts`, `[id]/messages/route.ts` were present). This
+     * call will 404 until that route is added server-side. Kept as best-effort so it
+     * doesn't block the rest of the chat UI, but it will never actually clear the
+     * unread badge against the server — only optimistically in local state.
+     */
     const markConversationRead = useCallback(async (conversationId: string) => {
         if (!currentUser) return;
         try {
@@ -206,10 +273,11 @@ export default function MessagesPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id }),
             });
-            if (!res.ok) throw new Error();
+            await unwrapApi(res);
             setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c)));
-        } catch {
-            // best-effort, ignore failures — unread badge will just stay stale until next refresh
+        } catch (err) {
+            // best-effort — log so the missing route is visible in devtools instead of invisible
+            console.warn('[markConversationRead] not applied (route likely missing):', err);
         }
     }, [currentUser]);
 
@@ -218,6 +286,7 @@ export default function MessagesPage() {
         setReplyTarget(null);
         setEditingMessage(null);
         setInputValue('');
+        setMessages([]); // clear stale messages immediately so old conversation content never flashes
         void loadConversationDetail(conversationId);
         void loadMessages(conversationId);
         void markConversationRead(conversationId);
@@ -322,7 +391,11 @@ export default function MessagesPage() {
                     return next;
                 });
             })
-            .subscribe();
+            .subscribe((status, err) => {
+                if (status === 'CHANNEL_ERROR' || err) {
+                    console.error('[realtime channel error]', selectedConversationId, err);
+                }
+            });
 
         channelRef.current = channel;
 
@@ -414,19 +487,24 @@ export default function MessagesPage() {
                     ...payload,
                 }),
             });
-            if (!res.ok) throw new Error();
-            const result = await res.json();
-            setMessages((prev) => (prev.some((m) => m.id === result.data.id) ? prev : [...prev, result.data]));
+            const created = await unwrapApi<MessageRecord>(res);
+            setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]));
             void loadConversations();
             resetComposer();
             broadcastTyping(false);
-        } catch {
-            toast.error('Failed to send message');
+        } catch (err) {
+            console.error('[sendMessage]', err);
+            toast.error(err instanceof Error ? err.message : 'Failed to send message');
         } finally {
             setSending(false);
         }
     }, [selectedConversationId, currentUser, replyTarget, broadcastTyping, loadConversations, toast]);
 
+    /**
+     * NOTE: `/api/messages/[id]` (PUT) is not present in the provided API routes —
+     * only the collection route `/api/conversations/[id]/messages` (GET/POST) exists.
+     * This will 404 until that route is added server-side.
+     */
     const updateMessage = useCallback(async (messageId: string, content: string) => {
         if (!currentUser) return;
         try {
@@ -435,23 +513,28 @@ export default function MessagesPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, content }),
             });
-            if (!res.ok) throw new Error();
-            const result = await res.json();
-            setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, content: result.data.content, isEdited: true } : m)));
+            const updated = await unwrapApi<{ content: string }>(res);
+            setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, content: updated.content, isEdited: true } : m)));
             resetComposer();
-        } catch {
-            toast.error('Failed to edit message');
+        } catch (err) {
+            console.error('[updateMessage]', err);
+            toast.error(err instanceof Error ? err.message : 'Failed to edit message');
         }
     }, [currentUser]);
 
+    /**
+     * NOTE: same as above — `/api/messages/[id]` (DELETE) is not present in the
+     * provided routes. Will 404 until added server-side.
+     */
     const deleteMessage = useCallback(async (messageId: string) => {
         if (!currentUser) return;
         try {
             const res = await fetch(`/api/messages/${messageId}?userId=${currentUser.id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error();
+            await unwrapApi(res);
             setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, content: 'Message deleted', isDeleted: true } : m)));
-        } catch {
-            toast.error('Failed to delete message');
+        } catch (err) {
+            console.error('[deleteMessage]', err);
+            toast.error(err instanceof Error ? err.message : 'Failed to delete message');
         }
     }, [currentUser]);
 
@@ -474,6 +557,11 @@ export default function MessagesPage() {
 
     /* ------------------------------ Uploads ------------------------------ */
 
+    /**
+     * NOTE: `/api/uploads` is not present in the provided API routes. This will
+     * 404 until that route is added server-side (it needs to accept multipart
+     * form-data and return `{ data: { url } }`).
+     */
     const buildUploadProps = (kind: 'image' | 'file'): UploadProps => ({
         showUploadList: false,
         accept: kind === 'image' ? 'image/*' : undefined,
@@ -482,17 +570,17 @@ export default function MessagesPage() {
                 const formData = new FormData();
                 formData.append('file', file);
                 const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error();
-                const result = await res.json();
+                const result = await unwrapApi<{ url: string }>(res);
                 await sendMessage({
                     type: kind,
-                    attachmentUrl: result.data.url,
+                    attachmentUrl: result.url,
                     attachmentName: file.name,
                     attachmentSize: file.size,
                     content: kind === 'image' ? 'Image' : file.name,
                 });
-            } catch {
-                toast.error('Upload failed');
+            } catch (err) {
+                console.error('[upload]', err);
+                toast.error(err instanceof Error ? err.message : 'Upload failed');
             }
             return false;
         },
@@ -601,7 +689,7 @@ export default function MessagesPage() {
                         ) : (
                             filteredConversations.map((conversation) => {
                                 const isOnline = conversation.type === 'private'
-                                    && conversation.otherUserId !== null
+                                    && !!conversation.otherUserId
                                     && onlineUserIds.has(conversation.otherUserId);
 
                                 return (
