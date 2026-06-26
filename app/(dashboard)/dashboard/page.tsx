@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import type { ReactNode } from 'react';
 import {
   Avatar,
   Button,
@@ -38,41 +39,47 @@ import type {
   RecentNotification,
   BranchUserStat,
   CourseProgressStat,
+  TrainingStatusStat,
 } from '@/types/dashboard.types';
 
 const { Title, Text } = Typography;
 
+/* ─── Date helpers ───────────────────────────────────────── */
+
+/**
+ * Format a date string/Date to DD-MM-YYYY
+ */
 export function formatDate(value: string | Date | null | undefined): string {
-    if (!value) return '';
-    const d = typeof value === 'string' ? new Date(value) : value;
-    if (isNaN(d.getTime())) return '';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}-${mm}-${yyyy}`;
+  if (!value) return '';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
 }
 
 /**
  * Format a date string to DD-MM-YYYY HH:MM
  */
 export function formatDateTime(value: string | Date | null | undefined): string {
-    if (!value) return '';
-    const d = typeof value === 'string' ? new Date(value) : value;
-    if (isNaN(d.getTime())) return '';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    const hh = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+  if (!value) return '';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
 }
 
 /**
  * Parse DD-MM-YYYY string to ISO date string (YYYY-MM-DD)
  */
 export function parseDDMMYYYY(value: string): string {
-    const [dd, mm, yyyy] = value.split('-');
-    return `${yyyy}-${mm}-${dd}`;
+  const [dd, mm, yyyy] = value.split('-');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 /* ─── Status config ──────────────────────────────────────── */
@@ -98,7 +105,7 @@ function KpiSkeleton() {
 }
 
 /* ─── Section title ──────────────────────────────────────── */
-function SectionTitle({ children }: { children: React.ReactNode }) {
+function SectionTitle({ children }: { children: ReactNode }) {
   return (
     <Title level={5} style={{ margin: '0 0 12px 0', color: '#374151' }}>
       {children}
@@ -106,7 +113,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ─── Horizontal bar chart ───────────────────────────────── */
+/* ─── Horizontal bar chart (generic, type-safe) ──────────── */
 function BarChart<T extends object>({
   data,
   labelKey,
@@ -119,11 +126,7 @@ function BarChart<T extends object>({
   color?: string;
 }) {
   const max = useMemo(
-    () =>
-      Math.max(
-        ...data.map((d) => Number(d[valueKey]) || 0),
-        1
-      ),
+    () => Math.max(...data.map((d) => Number(d[valueKey]) || 0), 1),
     [data, valueKey],
   );
 
@@ -137,7 +140,6 @@ function BarChart<T extends object>({
         const label = String(row[labelKey]);
         const value = Number(row[valueKey]);
         const pct = Math.round((value / max) * 100);
-
         return (
           <div key={i}>
             <div
@@ -149,25 +151,15 @@ function BarChart<T extends object>({
               }}
             >
               <Tooltip title={label}>
-                <Text
-                  ellipsis
-                  style={{ maxWidth: 160, fontSize: 13, color: '#374151' }}
-                >
+                <Text ellipsis style={{ maxWidth: 160, fontSize: 13, color: '#374151' }}>
                   {label}
                 </Text>
               </Tooltip>
-
               <Text strong style={{ fontSize: 13 }}>
                 {value}
               </Text>
             </div>
-
-            <Progress
-              percent={pct}
-              showInfo={false}
-              strokeColor={color}
-              size="small"
-            />
+            <Progress percent={pct} showInfo={false} strokeColor={color} size="small" />
           </div>
         );
       })}
@@ -176,11 +168,7 @@ function BarChart<T extends object>({
 }
 
 /* ─── Donut-style pie with Progress.Circle ───────────────── */
-function PieChart({
-  data,
-}: {
-  data: { status: string; total: number }[];
-}) {
+function PieChart({ data }: { data: TrainingStatusStat[] }) {
   const total = useMemo(() => data.reduce((s, d) => s + d.total, 0), [data]);
 
   const COLORS: Record<string, string> = {
@@ -205,30 +193,19 @@ function PieChart({
       {data.map((item) => {
         const pct = total > 0 ? Math.round((item.total / total) * 100) : 0;
         return (
-          <div
-            key={item.status}
-            style={{ textAlign: 'center', minWidth: 100 }}
-          >
+          <div key={item.status} style={{ textAlign: 'center', minWidth: 100 }}>
             <Progress
               type="circle"
               percent={pct}
               size={90}
               strokeColor={COLORS[item.status] ?? '#6366f1'}
-              format={() => (
-                <span style={{ fontSize: 18, fontWeight: 700 }}>
-                  {item.total}
-                </span>
-              )}
+              format={() => <span style={{ fontSize: 18, fontWeight: 700 }}>{item.total}</span>}
             />
-            <div style={{ marginTop: 8, fontSize: 13, color: '#6B7280' }}>
-              {item.status}
-            </div>
+            <div style={{ marginTop: 8, fontSize: 13, color: '#6B7280' }}>{item.status}</div>
           </div>
         );
       })}
-      <div style={{ fontSize: 12, color: '#9CA3AF', alignSelf: 'flex-end' }}>
-        Total: {total}
-      </div>
+      <div style={{ fontSize: 12, color: '#9CA3AF', alignSelf: 'flex-end' }}>Total: {total}</div>
     </div>
   );
 }
@@ -258,9 +235,7 @@ const mentorRequestColumns: ColumnsType<RecentMentorRequest> = [
   {
     title: 'Submitted',
     dataIndex: 'createdAt',
-    render: (v: string) => (
-      <span style={{ fontSize: 13, color: '#6B7280' }}>{formatDate(v)}</span>
-    ),
+    render: (v: string) => <span style={{ fontSize: 13, color: '#6B7280' }}>{formatDate(v)}</span>,
   },
 ];
 
@@ -299,9 +274,7 @@ const trainingColumns: ColumnsType<RecentTrainingRelation> = [
   {
     title: 'Start Date',
     dataIndex: 'startDate',
-    render: (v: string) => (
-      <span style={{ fontSize: 13, color: '#6B7280' }}>{formatDate(v)}</span>
-    ),
+    render: (v: string) => <span style={{ fontSize: 13, color: '#6B7280' }}>{formatDate(v)}</span>,
   },
 ];
 
@@ -373,11 +346,7 @@ export default function DashboardPage() {
           </Title>
           <Text type="secondary">Overview of your discipleship system</Text>
         </div>
-        <Button
-          icon={<ReloadOutlined />}
-          loading={loading}
-          onClick={() => void refreshDashboard()}
-        >
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refreshDashboard()}>
           Refresh
         </Button>
       </div>
@@ -386,44 +355,37 @@ export default function DashboardPage() {
       <Row gutter={[16, 16]}>
         {loading
           ? Array.from({ length: 8 }).map((_, i) => (
-            <Col key={i} xs={24} sm={12} md={8} lg={6}>
-              <KpiSkeleton />
-            </Col>
-          ))
+              <Col key={i} xs={24} sm={12} md={8} lg={6}>
+                <KpiSkeleton />
+              </Col>
+            ))
           : kpiCards.map((kpi) => (
-            <Col key={kpi.title} xs={24} sm={12} md={8} lg={6}>
-              <Card
-                styles={{ body: { padding: '16px 20px' } }}
-                style={{ borderRadius: 10 }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 10,
-                      background: kpi.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {kpi.icon}
+              <Col key={kpi.title} xs={24} sm={12} md={8} lg={6}>
+                <Card styles={{ body: { padding: '16px 20px' } }} style={{ borderRadius: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 10,
+                        background: kpi.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {kpi.icon}
+                    </div>
+                    <Statistic
+                      title={<span style={{ fontSize: 12, color: '#6B7280' }}>{kpi.title}</span>}
+                      value={kpi.value}
+                      valueStyle={{ fontSize: 24, fontWeight: 700 }}
+                    />
                   </div>
-                  <Statistic
-                    title={
-                      <span style={{ fontSize: 12, color: '#6B7280' }}>
-                        {kpi.title}
-                      </span>
-                    }
-                    value={kpi.value}
-                    valueStyle={{ fontSize: 24, fontWeight: 700 }}
-                  />
-                </div>
-              </Card>
-            </Col>
-          ))}
+                </Card>
+              </Col>
+            ))}
       </Row>
 
       {/* ── Charts row ── */}
@@ -435,11 +397,11 @@ export default function DashboardPage() {
               <Skeleton active paragraph={{ rows: 5 }} />
             ) : (
               <BarChart<BranchUserStat>
-  data={dashboard?.charts.usersByBranch ?? []}
-  labelKey="branchName"
-  valueKey="total"
-  color="#6366f1"
-/>
+                data={dashboard?.charts.usersByBranch ?? []}
+                labelKey="branchName"
+                valueKey="total"
+                color="#6366f1"
+              />
             )}
           </Card>
         </Col>
@@ -461,8 +423,8 @@ export default function DashboardPage() {
         {loading ? (
           <Skeleton active paragraph={{ rows: 5 }} />
         ) : (
-          <BarChart
-            data={dashboard?.charts.courseProgress as CourseProgressStat[] ?? []}
+          <BarChart<CourseProgressStat>
+            data={dashboard?.charts.courseProgress ?? []}
             labelKey="courseName"
             valueKey="total"
             color="#10b981"
@@ -481,7 +443,9 @@ export default function DashboardPage() {
             columns={mentorRequestColumns}
             pagination={false}
             size="small"
-            locale={{ emptyText: <Empty description="No recent requests" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+            locale={{
+              emptyText: <Empty description="No recent requests" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+            }}
           />
         )}
       </Card>
@@ -497,7 +461,11 @@ export default function DashboardPage() {
             columns={trainingColumns}
             pagination={false}
             size="small"
-            locale={{ emptyText: <Empty description="No recent training relations" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+            locale={{
+              emptyText: (
+                <Empty description="No recent training relations" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ),
+            }}
           />
         )}
       </Card>
@@ -509,15 +477,11 @@ export default function DashboardPage() {
         ) : (
           <List<RecentNotification>
             dataSource={dashboard?.recentNotifications ?? []}
-            locale={{ emptyDescription: 'No notifications' }}
+            locale={{ emptyText: 'No notifications' }}
             renderItem={(item) => (
               <List.Item
                 style={{ padding: '10px 0' }}
-                extra={
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatDate(item.createdAt)}
-                  </Text>
-                }
+                extra={<Text type="secondary" style={{ fontSize: 12 }}>{formatDate(item.createdAt)}</Text>}
               >
                 <List.Item.Meta
                   avatar={
@@ -532,16 +496,10 @@ export default function DashboardPage() {
                         justifyContent: 'center',
                       }}
                     >
-                      <CloseCircleOutlined
-                        style={{ color: '#6366f1', fontSize: 14 }}
-                      />
+                      <CloseCircleOutlined style={{ color: '#6366f1', fontSize: 14 }} />
                     </div>
                   }
-                  title={
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>
-                      {item.title}
-                    </span>
-                  }
+                  title={<span style={{ fontSize: 13, fontWeight: 500 }}>{item.title}</span>}
                 />
               </List.Item>
             )}
