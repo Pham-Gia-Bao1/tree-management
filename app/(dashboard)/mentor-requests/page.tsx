@@ -7,84 +7,44 @@ import {
     Button,
     Card,
     Col,
-    Descriptions,
-    Drawer,
+    Form,
     Input,
+    Modal,
     Row,
+    Select,
     Space,
     Statistic,
     Table,
     Tag,
-    Tabs,
     Typography,
 } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import {
     CheckOutlined,
     CloseOutlined,
-    EyeOutlined,
-    UserAddOutlined,
     SearchOutlined,
-    ClockCircleOutlined,
-    CheckCircleOutlined,
-    StopOutlined,
 } from '@ant-design/icons';
-import { formatDate } from '@/utils/date';
+import { formatDate, formatDateTime } from '@/utils/date';
 import type { MentorRequestStatus } from '@/types/database.types';
+import type { MentorRequestRecord } from '@/types/mentor-request.types';
 
 const { Title, Text } = Typography;
 
 /* =========================
-   TYPE (MATCH API)
+   STATUS CONFIG
 ========================= */
-interface MentorRequest {
-    id: string;
-    status: MentorRequestStatus;
-
-    requester: {
-        id: string;
-        name: string;
-        email: string;
-    } | null;
-
-    mentor: {
-        id: string;
-        name: string;
-        email: string;
-    } | null;
-
-    course: {
-        id: string;
-        name: string;
-        code: string;
-    } | null;
-
-    createdAt: string;
-    updatedAt: string | null;
-}
-
-/* =========================
-   STATUS COLORS
-========================= */
-const STATUS_COLORS: Record<MentorRequestStatus, string> = {
+const STATUS_COLOR: Record<MentorRequestStatus, string> = {
     pending: 'gold',
     approved: 'success',
     rejected: 'error',
 };
 
 /* =========================
-   USER CELL
+   BRANCH OPTION
 ========================= */
-function UserCell({ name }: { name: string | null }) {
-    if (!name) return <Text type="secondary">—</Text>;
-
-    return (
-        <Space size={6}>
-            <Avatar size={22} style={{ background: '#7F77DD' }}>
-                {name.charAt(0).toUpperCase()}
-            </Avatar>
-            <span style={{ fontSize: 13, fontWeight: 500 }}>{name}</span>
-        </Space>
-    );
+interface BranchOption {
+    value: string;
+    label: string;
 }
 
 /* =========================
@@ -92,25 +52,44 @@ function UserCell({ name }: { name: string | null }) {
 ========================= */
 export default function MentorRequestsPage() {
     const { message, modal } = App.useApp();
+    const [rejectForm] = Form.useForm<{ reviewNote: string }>();
 
-    const [data, setData] = useState<MentorRequest[]>([]);
+    const [data, setData] = useState<MentorRequestRecord[]>([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
-    const [activeTab, setActiveTab] = useState('pending');
+    const [statusFilter, setStatusFilter] = useState<MentorRequestStatus | ''>('');
+    const [branchFilter, setBranchFilter] = useState('');
+    const [branchOptions, setBranchOptions] = useState<BranchOption[]>([]);
+    const [rejectModalOpen, setRejectModalOpen] = useState(false);
+    const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+    const [actionLoading, setActionLoading] = useState(false);
 
-    const [viewRecord, setViewRecord] = useState<MentorRequest | null>(null);
-    const [viewOpen, setViewOpen] = useState(false);
+    /* ─── Load branches ─── */
+    useEffect(() => {
+        void (async () => {
+            const res = await fetch('/api/branches');
+            if (!res.ok) return;
+            const payload = await res.json();
+            setBranchOptions(
+                (payload.data ?? []).map((b: { id: string; name: string }) => ({
+                    value: b.id,
+                    label: b.name,
+                })),
+            );
+        })();
+    }, []);
 
-    /* =========================
-       LOAD DATA
-    ========================= */
+    /* ─── Load requests ─── */
     const loadData = useCallback(async () => {
         try {
             setLoading(true);
+            const params = new URLSearchParams();
+            if (statusFilter) params.set('status', statusFilter);
+            if (search) params.set('search', search);
+            if (branchFilter) params.set('branchId', branchFilter);
 
-            const res = await fetch('/api/mentor-requests');
-            if (!res.ok) throw new Error();
-
+            const res = await fetch(`/api/mentor-requests?${params.toString()}`);
+            if (!res.ok) throw new Error('Failed to load');
             const payload = await res.json();
             setData(payload.data ?? []);
         } catch {
@@ -118,113 +97,119 @@ export default function MentorRequestsPage() {
         } finally {
             setLoading(false);
         }
-    }, [message]);
+    }, [message, statusFilter, search, branchFilter]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
 
-    /* =========================
-       FILTER
-    ========================= */
-    const filteredData = useMemo(() => {
-        const source =
-            activeTab === 'pending'
-                ? data.filter((i) => i.status === 'pending')
-                : data;
-
-        const keyword = search.toLowerCase();
-
-        return source.filter((item) => {
-            return (
-                item.mentor?.name?.toLowerCase().includes(keyword) ||
-                item.requester?.name?.toLowerCase().includes(keyword) ||
-                item.course?.name?.toLowerCase().includes(keyword)
-            );
-        });
-    }, [data, search, activeTab]);
-
-    /* =========================
-       STATS
-    ========================= */
-    const stats = useMemo(() => {
-        return {
+    /* ─── Stats ─── */
+    const stats = useMemo(
+        () => ({
             total: data.length,
             pending: data.filter((i) => i.status === 'pending').length,
             approved: data.filter((i) => i.status === 'approved').length,
             rejected: data.filter((i) => i.status === 'rejected').length,
-        };
-    }, [data]);
+        }),
+        [data],
+    );
 
-    /* =========================
-       ACTIONS
-    ========================= */
-    const handleAction = (record: MentorRequest, action: 'approve' | 'reject') => {
+    /* ─── Approve ─── */
+    const handleApprove = (record: MentorRequestRecord) => {
         modal.confirm({
-            title: action === 'approve' ? 'Approve Request' : 'Reject Request',
-            content: `Are you sure you want to ${action} this request?`,
-            okText: action === 'approve' ? 'Approve' : 'Reject',
-            okButtonProps: action === 'reject' ? { danger: true } : undefined,
-
+            title: 'Approve Mentor Request',
+            content: `Approve request from ${record.requester?.name ?? 'this member'}? They will be granted the MENTOR role.`,
+            okText: 'Approve',
             onOk: async () => {
                 try {
-                    const res = await fetch(`/api/mentor-requests/${record.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action,
-                            reviewedBy: 'SYSTEM_USER_ID',
-                        }),
+                    setActionLoading(true);
+                    const res = await fetch(`/api/mentor-requests/${record.id}/approve`, {
+                        method: 'PUT',
                     });
-
-                    if (!res.ok) throw new Error();
-
-                    message.success(`Request ${action}d`);
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err?.error?.message ?? 'Failed to approve');
+                    }
+                    message.success('Request approved. Member promoted to Mentor.');
                     await loadData();
-                } catch {
-                    message.error('Action failed');
+                } catch (err) {
+                    message.error(err instanceof Error ? err.message : 'Failed to approve');
+                } finally {
+                    setActionLoading(false);
                 }
             },
         });
     };
 
-    /* =========================
-       COLUMNS
-    ========================= */
-    const columns = [
+    /* ─── Reject ─── */
+    const openRejectModal = (record: MentorRequestRecord) => {
+        setRejectTargetId(record.id);
+        rejectForm.resetFields();
+        setRejectModalOpen(true);
+    };
+
+    const handleRejectConfirm = async () => {
+        try {
+            const values = await rejectForm.validateFields();
+            setActionLoading(true);
+
+            const res = await fetch(`/api/mentor-requests/${rejectTargetId}/reject`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reviewNote: values.reviewNote }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err?.error?.message ?? 'Failed to reject');
+            }
+
+            message.success('Request rejected.');
+            setRejectModalOpen(false);
+            setRejectTargetId(null);
+            await loadData();
+        } catch (err) {
+            if (err instanceof Error && err.message !== 'Validate Failed') {
+                message.error(err.message);
+            }
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    /* ─── Columns ─── */
+    const columns: ColumnsType<MentorRequestRecord> = [
         {
-            title: 'Mentor',
-            key: 'mentor',
-            render: (_: unknown, record: MentorRequest) => (
-                <div>
-                    <div className="font-medium">{record.mentor?.name ?? '—'}</div>
-                    <div className="text-xs text-gray-500">
-                        {record.mentor?.email}
+            title: 'Member',
+            key: 'member',
+            render: (_, record) => (
+                <Space size={8}>
+                    <Avatar size={32} style={{ background: '#7F77DD' }}>
+                        {(record.requester?.name ?? '?').charAt(0).toUpperCase()}
+                    </Avatar>
+                    <div>
+                        <div style={{ fontWeight: 500, fontSize: 13 }}>
+                            {record.requester?.name ?? '—'}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#6B7280' }}>
+                            {record.requester?.email ?? '—'}
+                        </div>
                     </div>
-                </div>
+                </Space>
             ),
         },
         {
-            title: 'Requested By',
-            key: 'requester',
-            render: (_: unknown, record: MentorRequest) => (
-                <UserCell name={record.requester?.name ?? null} />
-            ),
+            title: 'Branch',
+            key: 'branch',
+            render: (_, record) =>
+                record.requester?.branch ? (
+                    <Tag>{record.requester.branch.name}</Tag>
+                ) : (
+                    <Text type="secondary">—</Text>
+                ),
         },
         {
-            title: 'Course',
-            key: 'course',
-            render: (_: unknown, record: MentorRequest) => (
-                <div>
-                    <div className="font-medium">{record.course?.name}</div>
-                    <div className="text-xs text-gray-500">
-                        {record.course?.code}
-                    </div>
-                </div>
-            ),
-        },
-        {
-            title: 'Created',
+            title: 'Submitted At',
             dataIndex: 'createdAt',
             render: (v: string) => (
                 <span style={{ fontSize: 13 }}>{formatDate(v)}</span>
@@ -234,155 +219,192 @@ export default function MentorRequestsPage() {
             title: 'Status',
             dataIndex: 'status',
             render: (v: MentorRequestStatus) => (
-                <Tag color={STATUS_COLORS[v]}>{v.toUpperCase()}</Tag>
+                <Tag color={STATUS_COLOR[v]}>{v.toUpperCase()}</Tag>
             ),
         },
         {
-            title: '',
+            title: 'Reason',
+            dataIndex: 'reason',
+            render: (v: string | null) => (
+                <Text style={{ fontSize: 13 }} ellipsis={{ tooltip: v ?? '' }}>
+                    {v ?? '—'}
+                </Text>
+            ),
+            width: 180,
+        },
+        {
+            title: 'Experience',
+            dataIndex: 'experience',
+            render: (v: string | null) => (
+                <Text style={{ fontSize: 13 }} ellipsis={{ tooltip: v ?? '' }}>
+                    {v ?? '—'}
+                </Text>
+            ),
+            width: 180,
+        },
+        {
+            title: 'Reviewed By',
+            key: 'reviewedBy',
+            render: (_, record) =>
+                record.reviewedBy ? (
+                    <span style={{ fontSize: 13 }}>{record.reviewedBy.name}</span>
+                ) : (
+                    <Text type="secondary">—</Text>
+                ),
+        },
+        {
+            title: 'Reviewed At',
+            dataIndex: 'reviewedAt',
+            render: (v: string | null) =>
+                v ? (
+                    <span style={{ fontSize: 13 }}>{formatDateTime(v)}</span>
+                ) : (
+                    <Text type="secondary">—</Text>
+                ),
+        },
+        {
+            title: 'Actions',
             key: 'actions',
-            render: (_: unknown, record: MentorRequest) => (
-                <Space>
-                    <Button
-                        icon={<EyeOutlined />}
-                        onClick={() => {
-                            setViewRecord(record);
-                            setViewOpen(true);
-                        }}
-                    />
-
-                    {record.status === 'pending' && (
-                        <>
-                            <Button
-                                type="primary"
-                                icon={<CheckOutlined />}
-                                onClick={() => handleAction(record, 'approve')}
-                            />
-                            <Button
-                                danger
-                                icon={<CloseOutlined />}
-                                onClick={() => handleAction(record, 'reject')}
-                            />
-                        </>
-                    )}
-                </Space>
-            ),
+            fixed: 'right',
+            render: (_, record) =>
+                record.status === 'pending' ? (
+                    <Space>
+                        <Button
+                            type="primary"
+                            size="small"
+                            icon={<CheckOutlined />}
+                            loading={actionLoading}
+                            onClick={() => handleApprove(record)}
+                        >
+                            Approve
+                        </Button>
+                        <Button
+                            danger
+                            size="small"
+                            icon={<CloseOutlined />}
+                            loading={actionLoading}
+                            onClick={() => openRejectModal(record)}
+                        >
+                            Reject
+                        </Button>
+                    </Space>
+                ) : (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {record.status === 'approved' ? 'Approved' : 'Rejected'}
+                    </Text>
+                ),
         },
     ];
 
-    /* =========================
-       TABS
-    ========================= */
-    const tabItems = [
-        {
-            key: 'pending',
-            label: (
-                <span>
-                    Pending <Tag color="gold">{stats.pending}</Tag>
-                </span>
-            ),
-        },
-        {
-            key: 'all',
-            label: `All (${stats.total})`,
-        },
-    ];
-
-    /* =========================
-       UI
-    ========================= */
+    /* ─── UI ─── */
     return (
         <div className="space-y-4">
-            <div className="flex justify-between">
-                <div>
-                    <Title level={3}>Mentor Requests</Title>
-                    <Text type="secondary">
-                        Manage mentor onboarding requests
-                    </Text>
-                </div>
+            {/* Header */}
+            <div>
+                <Title level={3} style={{ marginBottom: 0 }}>
+                    Mentor Requests
+                </Title>
+                <Text type="secondary">
+                    Review and manage member requests to become a mentor
+                </Text>
             </div>
 
-            {/* STATS */}
+            {/* Stats */}
             <Row gutter={12}>
-                <Col span={6}>
-                    <Card>
-                        <Statistic title="Total" value={stats.total} />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic title="Pending" value={stats.pending} />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic title="Approved" value={stats.approved} />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic title="Rejected" value={stats.rejected} />
-                    </Card>
-                </Col>
+                {(
+                    [
+                        { title: 'Total', value: stats.total },
+                        { title: 'Pending', value: stats.pending },
+                        { title: 'Approved', value: stats.approved },
+                        { title: 'Rejected', value: stats.rejected },
+                    ] as const
+                ).map((s) => (
+                    <Col span={6} key={s.title}>
+                        <Card>
+                            <Statistic title={s.title} value={s.value} />
+                        </Card>
+                    </Col>
+                ))}
             </Row>
 
-            {/* TABLE */}
+            {/* Filters */}
             <Card>
-                <Tabs
-                    activeKey={activeTab}
-                    onChange={setActiveTab}
-                    items={tabItems}
-                />
-
-                <Input
-                    prefix={<SearchOutlined />}
-                    placeholder="Search mentor, requester, course..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    style={{ marginBottom: 12, maxWidth: 300 }}
-                />
-
-                <Table
-                    rowKey="id"
-                    loading={loading}
-                    columns={columns}
-                    dataSource={filteredData}
-                    pagination={{ pageSize: 10 }}
-                />
+                <Space wrap>
+                    <Input
+                        prefix={<SearchOutlined />}
+                        placeholder="Search member name or email..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        style={{ width: 260 }}
+                        allowClear
+                    />
+                    <Select
+                        placeholder="Filter by status"
+                        value={statusFilter || undefined}
+                        onChange={(v) => setStatusFilter(v ?? '')}
+                        allowClear
+                        style={{ width: 160 }}
+                        options={[
+                            { value: 'pending', label: 'Pending' },
+                            { value: 'approved', label: 'Approved' },
+                            { value: 'rejected', label: 'Rejected' },
+                        ]}
+                    />
+                    <Select
+                        placeholder="Filter by branch"
+                        value={branchFilter || undefined}
+                        onChange={(v) => setBranchFilter(v ?? '')}
+                        allowClear
+                        style={{ width: 200 }}
+                        options={branchOptions}
+                    />
+                    <Button onClick={() => void loadData()}>Refresh</Button>
+                </Space>
             </Card>
 
-            {/* DRAWER */}
-            <Drawer
-                open={viewOpen}
-                onClose={() => setViewOpen(false)}
-                title="Request Detail"
-                size="small"
+            {/* Table */}
+            <Card styles={{ body: { padding: 0, overflow: 'hidden' } }}>
+                <div style={{ width: '100%', overflowX: 'auto' }}>
+                    <Table<MentorRequestRecord>
+                        rowKey="id"
+                        loading={loading}
+                        columns={columns}
+                        dataSource={data}
+                        scroll={{ x: 'max-content' }}
+                        pagination={{
+                            pageSize: 10,
+                            showSizeChanger: true,
+                            showTotal: (total) => `${total} items`,
+                        }}
+                    />
+                </div>
+            </Card>
+
+            {/* Reject Modal */}
+            <Modal
+                title="Reject Mentor Request"
+                open={rejectModalOpen}
+                onCancel={() => {
+                    setRejectModalOpen(false);
+                    setRejectTargetId(null);
+                }}
+                onOk={handleRejectConfirm}
+                okText="Reject"
+                okButtonProps={{ danger: true, loading: actionLoading }}
             >
-                {viewRecord && (
-                    <Descriptions column={1} bordered size="small">
-                        <Descriptions.Item label="Mentor">
-                            {viewRecord.mentor?.name}
-                        </Descriptions.Item>
-
-                        <Descriptions.Item label="Requester">
-                            {viewRecord.requester?.name}
-                        </Descriptions.Item>
-
-                        <Descriptions.Item label="Course">
-                            {viewRecord.course?.name}
-                        </Descriptions.Item>
-
-                        <Descriptions.Item label="Status">
-                            <Tag color={STATUS_COLORS[viewRecord.status]}>
-                                {viewRecord.status.toUpperCase()}
-                            </Tag>
-                        </Descriptions.Item>
-
-                        <Descriptions.Item label="Created">
-                            {formatDate(viewRecord.createdAt)}
-                        </Descriptions.Item>
-                    </Descriptions>
-                )}
-            </Drawer>
+                <Form form={rejectForm} layout="vertical" style={{ marginTop: 16 }}>
+                    <Form.Item
+                        name="reviewNote"
+                        label="Review Note"
+                        rules={[{ required: true, message: 'Please provide a reason for rejection.' }]}
+                    >
+                        <Input.TextArea
+                            rows={4}
+                            placeholder="Explain why this request is being rejected..."
+                        />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
 }
