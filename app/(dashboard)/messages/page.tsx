@@ -28,12 +28,26 @@ import {
     X,
 } from 'lucide-react';
 import { createClient, type RealtimeChannel } from '@supabase/supabase-js';
-import { formatDateTime } from '@/utils/date';
 
 const { Title, Text } = Typography;
 
-/* ----------------------------- Types ----------------------------- */
+// ---------- Simple date formatter (fallback) ----------
+function formatDate(iso: string): string {
+    try {
+        const d = new Date(iso);
+        return d.toLocaleString('vi-VN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        });
+    } catch {
+        return iso;
+    }
+}
 
+// ---------- Types ----------
 type ConversationType = 'private' | 'group' | 'system';
 type MessageType = 'text' | 'image' | 'file' | 'system';
 
@@ -103,47 +117,78 @@ interface CurrentUser {
     fullName: string;
 }
 
-/* --------------------------- Supabase client --------------------------- */
+// ---------- Supabase client (safe init) ----------
+function createSafeSupabaseClient() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+        console.warn('Supabase credentials missing, using dummy client');
+        return null;
+    }
+    return createClient(url, key);
+}
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-);
+const supabase = createSafeSupabaseClient();
 
-/* --------------------------- API envelope helper --------------------------- */
-
+// ---------- API helper ----------
 async function unwrapApi<T>(res: Response): Promise<T> {
     let body: unknown = null;
     try {
         body = await res.json();
     } catch (err) {
-        console.error('[unwrapApi] Failed to parse JSON:', err);
-        if (res.ok) {
-            return {} as T;
-        }
+        console.error('[unwrapApi] JSON parse error:', err);
+        if (res.ok) return {} as T;
         throw new Error(`HTTP ${res.status}: ${res.statusText || 'Request failed'}`);
     }
-
     const asRecord = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
-
     if (!res.ok) {
         const message =
-            (asRecord?.message as string | undefined) ??
-            (asRecord?.error as string | undefined) ??
+            (asRecord?.message as string) ||
+            (asRecord?.error as string) ||
             `Request failed (HTTP ${res.status})`;
         console.error('[API ERROR]', res.url, res.status, body);
         throw new Error(message);
     }
-
     if (asRecord && 'data' in asRecord) {
         return asRecord.data as T;
     }
     return body as T;
 }
 
-/* ------------------------------- Page ------------------------------- */
+// ---------- Error Boundary ----------
+class ErrorBoundary extends React.Component<
+    { children: React.ReactNode },
+    { hasError: boolean; error: Error | null }
+> {
+    constructor(props: { children: React.ReactNode }) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error: Error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error: Error) {
+        console.error('[ErrorBoundary] Caught:', error);
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div style={{ padding: 40, textAlign: 'center' }}>
+                    <Title level={3}>Something went wrong</Title>
+                    <Text type="secondary">{this.state.error?.message || 'Unknown error'}</Text>
+                    <br />
+                    <Button type="primary" onClick={() => window.location.reload()} style={{ marginTop: 16 }}>
+                        Reload page
+                    </Button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 
-export default function MessagesPage() {
+// ---------- Main Component ----------
+function MessagesPageContent() {
     // State
     const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
     const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -174,19 +219,16 @@ export default function MessagesPage() {
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastTypingSentAtRef = useRef<number>(0);
 
-    /* --------------------------- Bootstrap --------------------------- */
-
+    // ---------- Bootstrap ----------
     useEffect(() => {
-        let isMounted = true;
-
+        let mounted = true;
         const init = async () => {
             try {
                 setIsInitializing(true);
                 setError(null);
-
-                if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-                    console.warn('Supabase credentials missing. Using mock mode.');
-                    if (isMounted) {
+                if (!supabase) {
+                    console.warn('Supabase unavailable, using mock user');
+                    if (mounted) {
                         setCurrentUser({ id: 'mock-user', fullName: 'Mock User' });
                         setConversations([
                             {
@@ -198,85 +240,60 @@ export default function MessagesPage() {
                                 lastMessageAt: new Date().toISOString(),
                                 unreadCount: 0,
                                 memberCount: 2,
-                            }
+                            },
                         ]);
                     }
                     setIsInitializing(false);
                     return;
                 }
-
                 const res = await fetch('/api/auth/me');
-                
                 if (!res.ok) {
                     if (res.status === 401) {
-                        console.log('User not authenticated');
-                        if (isMounted) {
-                            setCurrentUser(null);
-                        }
+                        console.log('Not authenticated');
+                        if (mounted) setCurrentUser(null);
                     } else {
-                        throw new Error(`Auth failed: ${res.status} ${res.statusText}`);
+                        throw new Error(`Auth failed: ${res.status}`);
                     }
                 } else {
                     const me = await unwrapApi<{ id: string; fullName: string }>(res);
-                    if (isMounted) {
-                        setCurrentUser({ id: me.id, fullName: me.fullName });
-                    }
+                    if (mounted) setCurrentUser({ id: me.id, fullName: me.fullName });
                 }
             } catch (err) {
-                console.error('[init] Error:', err);
-                if (isMounted) {
+                console.error('[init]', err);
+                if (mounted) {
                     setError(err instanceof Error ? err.message : 'Failed to initialize');
                     setCurrentUser({ id: 'fallback-user', fullName: 'User (Fallback)' });
                 }
             } finally {
-                if (isMounted) {
-                    setIsInitializing(false);
-                }
+                if (mounted) setIsInitializing(false);
             }
         };
-
         init();
-
-        return () => {
-            isMounted = false;
-        };
+        return () => { mounted = false; };
     }, []);
 
-    /* --------------------------- Load Conversations --------------------------- */
-
+    // ---------- Load conversations ----------
     const loadConversations = useCallback(async () => {
-        if (!currentUser) {
-            console.log('[loadConversations] No current user, skipping');
-            return;
-        }
-
+        if (!currentUser) return;
         setLoadingConversations(true);
         try {
-            const url = `/api/conversations?userId=${currentUser.id}`;
-            console.log('[loadConversations] Fetching:', url);
-            
-            const res = await fetch(url);
-            console.log('[loadConversations] Response status:', res.status);
-            
+            const res = await fetch(`/api/conversations?userId=${currentUser.id}`);
             const data = await unwrapApi<ConversationListItem[]>(res);
-            console.log('[loadConversations] Data received:', data?.length ?? 0, 'conversations');
-            
-            setConversations(data ?? []);
+            setConversations(data || []);
         } catch (err) {
-            console.error('[loadConversations] Error:', err);
-            // Nếu API lỗi, dùng mock data cho dev
+            console.error('[loadConversations]', err);
             if (process.env.NODE_ENV === 'development') {
                 setConversations([
                     {
                         id: 'dev-1',
-                        title: 'Development Chat',
+                        title: 'Dev Chat',
                         avatarUrl: null,
                         type: 'private',
-                        lastMessage: 'Testing in dev mode',
+                        lastMessage: 'Dev mode',
                         lastMessageAt: new Date().toISOString(),
                         unreadCount: 0,
                         memberCount: 2,
-                    }
+                    },
                 ]);
             }
         } finally {
@@ -284,32 +301,27 @@ export default function MessagesPage() {
         }
     }, [currentUser]);
 
-    // Load conversations when user is available
     useEffect(() => {
-        if (currentUser && !isInitializing) {
-            loadConversations();
-        }
+        if (currentUser && !isInitializing) loadConversations();
     }, [currentUser, isInitializing, loadConversations]);
 
-    /* ------------------------- Load conversation detail ------------------------- */
-
+    // ---------- Load detail ----------
     const loadConversationDetail = useCallback(async (conversationId: string) => {
         try {
             const res = await fetch(`/api/conversations/${conversationId}`);
             const data = await unwrapApi<ConversationDetail>(res);
             setConversationDetail(data);
         } catch (err) {
-            console.error('[loadConversationDetail] Error:', err);
-            // Fallback mock data for dev
+            console.error('[loadConversationDetail]', err);
             if (process.env.NODE_ENV === 'development') {
                 setConversationDetail({
                     id: conversationId,
                     type: 'private',
-                    title: 'Mock Conversation',
+                    title: 'Mock Detail',
                     avatarUrl: null,
                     members: [
                         { id: '1', userId: 'mock-user', fullName: 'Mock User', avatarUrl: null, role: 'member' },
-                        { id: '2', userId: 'other-user', fullName: 'Other User', avatarUrl: null, role: 'member' },
+                        { id: '2', userId: 'other', fullName: 'Other', avatarUrl: null, role: 'member' },
                     ],
                     memberCount: 2,
                 });
@@ -317,74 +329,60 @@ export default function MessagesPage() {
         }
     }, []);
 
-    /* ------------------------- Load messages ------------------------- */
-
+    // ---------- Load messages ----------
     const loadMessages = useCallback(async (conversationId: string) => {
         if (!currentUser) return;
-
         setLoadingMessages(true);
         try {
             const res = await fetch(
-                `/api/conversations/${conversationId}/messages?userId=${currentUser.id}&page=1&limit=50`,
+                `/api/conversations/${conversationId}/messages?userId=${currentUser.id}&page=1&limit=50`
             );
             const data = await unwrapApi<MessagesPage_>(res);
-            setMessages(data?.messages ?? []);
+            setMessages(data?.messages || []);
         } catch (err) {
-            console.error('[loadMessages] Error:', err);
+            console.error('[loadMessages]', err);
             setMessages([]);
         } finally {
             setLoadingMessages(false);
         }
     }, [currentUser]);
 
-    /* ------------------------- Mark conversation read ------------------------- */
-
+    // ---------- Mark read ----------
     const markConversationRead = useCallback(async (conversationId: string) => {
         if (!currentUser) return;
-        
         try {
             const res = await fetch(`/api/conversations/${conversationId}/read`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id }),
             });
-            
-            if (res.ok) {
-                await unwrapApi(res);
-                setConversations((prev) => 
-                    prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c))
-                );
-            } else if (res.status === 404) {
-                console.warn('[markConversationRead] API route not found, updating local state only');
-                setConversations((prev) => 
+            if (res.ok || res.status === 404) {
+                setConversations((prev) =>
                     prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c))
                 );
             }
         } catch (err) {
-            console.warn('[markConversationRead] Failed:', err);
+            console.warn('[markConversationRead]', err);
         }
     }, [currentUser]);
 
-    /* ------------------------- Select conversation ------------------------- */
-
+    // ---------- Select conversation ----------
     const selectConversation = useCallback((conversationId: string) => {
         setSelectedConversationId(conversationId);
         setReplyTarget(null);
         setEditingMessage(null);
         setInputValue('');
         setMessages([]);
-        
         loadConversationDetail(conversationId);
         loadMessages(conversationId);
         markConversationRead(conversationId);
     }, [loadConversationDetail, loadMessages, markConversationRead]);
 
-    /* ------------------- Member name lookup ------------------- */
-
+    // ---------- Resolve sender name ----------
     const memberNameById = useMemo(() => {
         const map = new Map<string, string>();
-        for (const member of conversationDetail?.members ?? []) {
-            map.set(member.userId, member.fullName);
+        for (const m of conversationDetail?.members || []) {
+            map.set(m.userId, m.fullName);
         }
         return map;
     }, [conversationDetail]);
@@ -392,32 +390,20 @@ export default function MessagesPage() {
     const resolveSenderName = useCallback((senderId: string | null): string => {
         if (!senderId) return 'Unknown user';
         if (senderId === currentUser?.id) return currentUser.fullName;
-        return memberNameById.get(senderId) ?? 'Unknown user';
+        return memberNameById.get(senderId) || 'Unknown user';
     }, [memberNameById, currentUser]);
 
-    /* --------------------------- Realtime: messages --------------------------- */
-
+    // ---------- Realtime ----------
     useEffect(() => {
-        if (!selectedConversationId) return;
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-            console.log('[Realtime] Skipped - Supabase not configured');
-            return;
-        }
-
+        if (!selectedConversationId || !supabase) return;
         const channel = supabase
             .channel(`conversation-${selectedConversationId}`)
             .on(
                 'postgres_changes',
-                { 
-                    event: 'INSERT', 
-                    schema: 'public', 
-                    table: 'messages', 
-                    filter: `conversation_id=eq.${selectedConversationId}` 
-                },
+                { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` },
                 (payload) => {
                     const row = payload.new as Record<string, unknown>;
                     const senderId = (row.sender_id as string | null) ?? null;
-
                     setMessages((prev) => {
                         if (prev.some((m) => m.id === row.id)) return prev;
                         return [
@@ -441,22 +427,16 @@ export default function MessagesPage() {
                             },
                         ];
                     });
-
                     if (senderId !== currentUser?.id) {
                         markConversationRead(selectedConversationId);
                     } else {
                         loadConversations();
                     }
-                },
+                }
             )
             .on(
                 'postgres_changes',
-                { 
-                    event: 'UPDATE', 
-                    schema: 'public', 
-                    table: 'messages', 
-                    filter: `conversation_id=eq.${selectedConversationId}` 
-                },
+                { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` },
                 (payload) => {
                     const row = payload.new as Record<string, unknown>;
                     setMessages((prev) =>
@@ -470,17 +450,13 @@ export default function MessagesPage() {
                                     attachmentUrl: row.is_deleted ? null : ((row.attachment_url as string | null) ?? m.attachmentUrl),
                                     updatedAt: row.updated_at as string,
                                 }
-                                : m,
-                        ),
+                                : m
+                        )
                     );
-                },
+                }
             )
             .on('broadcast', { event: 'typing' }, (payload) => {
-                const { userId, fullName, isTyping } = payload.payload as { 
-                    userId: string; 
-                    fullName: string; 
-                    isTyping: boolean 
-                };
+                const { userId, fullName, isTyping } = payload.payload as { userId: string; fullName: string; isTyping: boolean };
                 if (userId === currentUser?.id) return;
                 setTypingUsers((prev) => {
                     const next = { ...prev };
@@ -491,55 +467,39 @@ export default function MessagesPage() {
             })
             .subscribe((status, err) => {
                 if (status === 'CHANNEL_ERROR' || err) {
-                    console.error('[realtime channel error]', selectedConversationId, err);
+                    console.error('[realtime error]', selectedConversationId, err);
                 }
             });
-
         channelRef.current = channel;
-
         return () => {
             supabase.removeChannel(channel).catch(console.error);
             channelRef.current = null;
             setTypingUsers({});
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedConversationId, currentUser?.id, resolveSenderName, markConversationRead, loadConversations]);
 
-    /* --------------------------- Realtime: presence --------------------------- */
-
+    // ---------- Presence ----------
     useEffect(() => {
-        if (!currentUser) return;
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-            console.log('[Presence] Skipped - Supabase not configured');
-            return;
-        }
-
-        const channel = supabase.channel('online-users', {
-            config: { presence: { key: currentUser.id } },
-        });
-
+        if (!currentUser || !supabase) return;
+        const channel = supabase.channel('online-users', { config: { presence: { key: currentUser.id } } });
         channel
-            .on('presence', { event: 'sync' }, () => {
+            .on('presence', { event: 'sync', () => {
                 const state = channel.presenceState();
                 setOnlineUserIds(new Set(Object.keys(state)));
-            })
+            } })
             .subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
-                    channel.track({ userId: currentUser.id, fullName: currentUser.fullName })
-                        .catch(console.error);
+                    channel.track({ userId: currentUser.id, fullName: currentUser.fullName }).catch(console.error);
                 }
             });
-
         presenceChannelRef.current = channel;
-
         return () => {
             supabase.removeChannel(channel).catch(console.error);
             presenceChannelRef.current = null;
         };
     }, [currentUser]);
 
-    /* ------------------------------ Typing ------------------------------ */
-
+    // ---------- Typing ----------
     const broadcastTyping = useCallback((isTyping: boolean) => {
         if (!channelRef.current || !currentUser) return;
         channelRef.current.send({
@@ -552,19 +512,16 @@ export default function MessagesPage() {
     const handleInputChange = (value: string) => {
         setInputValue(value);
         if (!currentUser) return;
-
         const now = Date.now();
         if (now - lastTypingSentAtRef.current > 1500) {
             lastTypingSentAtRef.current = now;
             broadcastTyping(true);
         }
-
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => broadcastTyping(false), 2000);
     };
 
-    /* ------------------------------ Sending ------------------------------ */
-
+    // ---------- Send / Edit / Delete ----------
     const resetComposer = () => {
         setInputValue('');
         setReplyTarget(null);
@@ -579,7 +536,6 @@ export default function MessagesPage() {
         attachmentSize?: number;
     }) => {
         if (!selectedConversationId || !currentUser) return;
-        
         setSending(true);
         try {
             const res = await fetch(`/api/conversations/${selectedConversationId}/messages`, {
@@ -597,7 +553,7 @@ export default function MessagesPage() {
             resetComposer();
             broadcastTyping(false);
         } catch (err) {
-            console.error('[sendMessage] Error:', err);
+            console.error('[sendMessage]', err);
         } finally {
             setSending(false);
         }
@@ -605,53 +561,40 @@ export default function MessagesPage() {
 
     const updateMessage = useCallback(async (messageId: string, content: string) => {
         if (!currentUser) return;
-        
         try {
             const res = await fetch(`/api/messages/${messageId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, content }),
             });
-            
             if (res.ok) {
                 const updated = await unwrapApi<{ content: string }>(res);
-                setMessages((prev) => 
+                setMessages((prev) =>
                     prev.map((m) => (m.id === messageId ? { ...m, content: updated.content, isEdited: true } : m))
                 );
                 resetComposer();
             } else if (res.status === 404) {
-                console.warn('[updateMessage] API route not found, updating locally');
-                setMessages((prev) => 
+                setMessages((prev) =>
                     prev.map((m) => (m.id === messageId ? { ...m, content, isEdited: true } : m))
                 );
                 resetComposer();
             }
         } catch (err) {
-            console.error('[updateMessage] Error:', err);
+            console.error('[updateMessage]', err);
         }
     }, [currentUser]);
 
     const deleteMessage = useCallback(async (messageId: string) => {
         if (!currentUser) return;
-        
         try {
-            const res = await fetch(`/api/messages/${messageId}?userId=${currentUser.id}`, { 
-                method: 'DELETE' 
-            });
-            
-            if (res.ok) {
-                await unwrapApi(res);
-                setMessages((prev) => 
-                    prev.map((m) => (m.id === messageId ? { ...m, content: 'Message deleted', isDeleted: true } : m))
-                );
-            } else if (res.status === 404) {
-                console.warn('[deleteMessage] API route not found, updating locally');
-                setMessages((prev) => 
+            const res = await fetch(`/api/messages/${messageId}?userId=${currentUser.id}`, { method: 'DELETE' });
+            if (res.ok || res.status === 404) {
+                setMessages((prev) =>
                     prev.map((m) => (m.id === messageId ? { ...m, content: 'Message deleted', isDeleted: true } : m))
                 );
             }
         } catch (err) {
-            console.error('[deleteMessage] Error:', err);
+            console.error('[deleteMessage]', err);
         }
     }, [currentUser]);
 
@@ -659,21 +602,20 @@ export default function MessagesPage() {
         if (editingMessage) {
             if (!inputValue.trim()) return;
             updateMessage(editingMessage.id, inputValue.trim());
-            return;
+        } else {
+            if (!inputValue.trim()) return;
+            sendMessage({ type: 'text', content: inputValue.trim() });
         }
-        if (!inputValue.trim()) return;
-        sendMessage({ type: 'text', content: inputValue.trim() });
     };
 
-    const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
             handleSend();
         }
     };
 
-    /* ------------------------------ Uploads ------------------------------ */
-
+    // ---------- Upload ----------
     const buildUploadProps = (kind: 'image' | 'file'): UploadProps => ({
         showUploadList: false,
         accept: kind === 'image' ? 'image/*' : undefined,
@@ -682,7 +624,6 @@ export default function MessagesPage() {
                 const formData = new FormData();
                 formData.append('file', file);
                 const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-                
                 if (res.ok) {
                     const result = await unwrapApi<{ url: string }>(res);
                     await sendMessage({
@@ -693,7 +634,6 @@ export default function MessagesPage() {
                         content: kind === 'image' ? 'Image' : file.name,
                     });
                 } else if (res.status === 404) {
-                    console.warn('[upload] Upload API not found, using data URL');
                     const reader = new FileReader();
                     reader.onload = async (e) => {
                         const dataUrl = e.target?.result as string;
@@ -710,31 +650,25 @@ export default function MessagesPage() {
                     throw new Error(`Upload failed: ${res.status}`);
                 }
             } catch (err) {
-                console.error('[upload] Error:', err);
+                console.error('[upload]', err);
             }
             return false;
         },
     });
 
-    /* ------------------------------ Derived ------------------------------ */
-
+    // ---------- Derived ----------
     const filteredConversations = useMemo(
-        () => conversations.filter((c) => 
-            c.title.toLowerCase().includes(conversationSearch.toLowerCase())
-        ),
-        [conversations, conversationSearch],
+        () => conversations.filter((c) => c.title.toLowerCase().includes(conversationSearch.toLowerCase())),
+        [conversations, conversationSearch]
     );
-
     const selectedConversation = useMemo(
         () => conversations.find((c) => c.id === selectedConversationId) ?? null,
-        [conversations, selectedConversationId],
+        [conversations, selectedConversationId]
     );
-
     const otherMember = useMemo(() => {
         if (!conversationDetail || conversationDetail.type !== 'private' || !currentUser) return null;
         return conversationDetail.members.find((m) => m.userId !== currentUser.id) ?? null;
     }, [conversationDetail, currentUser]);
-
     const isOtherOnline = otherMember ? onlineUserIds.has(otherMember.userId) : false;
     const typingNames = Object.values(typingUsers);
 
@@ -781,18 +715,10 @@ export default function MessagesPage() {
             : []),
     ];
 
-    /* ------------------------------- Loading State ------------------------------- */
-
+    // ---------- Render states ----------
     if (isInitializing) {
         return (
-            <div style={{ 
-                display: 'flex', 
-                justifyContent: 'center', 
-                alignItems: 'center', 
-                height: '100vh',
-                flexDirection: 'column',
-                gap: 16,
-            }}>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
                 <Spin size="large" />
                 <Text>Loading messages...</Text>
             </div>
@@ -801,26 +727,16 @@ export default function MessagesPage() {
 
     if (error) {
         return (
-            <div style={{ 
-                padding: 40, 
-                textAlign: 'center',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 16,
-            }}>
-                <div style={{ color: '#ff4d4f', fontSize: 48, marginBottom: 8 }}>⚠️</div>
+            <div style={{ padding: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <div style={{ color: '#ff4d4f', fontSize: 48 }}>⚠️</div>
                 <Title level={3}>{error}</Title>
                 <Text type="secondary">Please try refreshing the page</Text>
-                <Button type="primary" onClick={() => window.location.reload()}>
-                    Refresh Page
-                </Button>
+                <Button type="primary" onClick={() => window.location.reload()}>Refresh Page</Button>
             </div>
         );
     }
 
-    /* ------------------------------- Render ------------------------------- */
-
+    // ---------- Main render ----------
     return (
         <div className="space-y-4">
             <div>
@@ -841,13 +757,8 @@ export default function MessagesPage() {
                     background: '#fff',
                 }}
             >
-                {/* Left panel: conversation list */}
-                <div style={{ 
-                    width: 300, 
-                    borderRight: '1px solid #d0d7de', 
-                    display: 'flex', 
-                    flexDirection: 'column' 
-                }}>
+                {/* Left panel */}
+                <div style={{ width: 300, borderRight: '1px solid #d0d7de', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ padding: '12px 12px 8px' }}>
                         <Input
                             prefix={<Search size={14} />}
@@ -860,25 +771,14 @@ export default function MessagesPage() {
                     </div>
                     <div style={{ flex: 1, overflowY: 'auto' }}>
                         {loadingConversations ? (
-                            <div style={{ padding: 20, textAlign: 'center' }}>
-                                <Spin size="small" />
-                            </div>
+                            <div style={{ padding: 20, textAlign: 'center' }}><Spin size="small" /></div>
                         ) : filteredConversations.length === 0 ? (
                             <div style={{ padding: 24 }}>
-                                <Empty 
-                                    description={
-                                        conversationSearch 
-                                            ? 'No conversations found' 
-                                            : 'No conversations yet'
-                                    } 
-                                />
+                                <Empty description={conversationSearch ? 'No conversations found' : 'No conversations yet'} />
                             </div>
                         ) : (
                             filteredConversations.map((conversation) => {
-                                const isOnline = conversation.type === 'private'
-                                    && !!conversation.otherUserId
-                                    && onlineUserIds.has(conversation.otherUserId);
-
+                                const isOnline = conversation.type === 'private' && !!conversation.otherUserId && onlineUserIds.has(conversation.otherUserId);
                                 return (
                                     <div
                                         key={conversation.id}
@@ -886,26 +786,18 @@ export default function MessagesPage() {
                                         style={{
                                             padding: '10px 14px',
                                             cursor: 'pointer',
-                                            background: selectedConversationId === conversation.id 
-                                                ? '#f0f6ff' 
-                                                : 'transparent',
-                                            borderLeft: selectedConversationId === conversation.id 
-                                                ? '3px solid #1677ff' 
-                                                : '3px solid transparent',
+                                            background: selectedConversationId === conversation.id ? '#f0f6ff' : 'transparent',
+                                            borderLeft: selectedConversationId === conversation.id ? '3px solid #1677ff' : '3px solid transparent',
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: 10,
                                             transition: 'background 0.2s',
                                         }}
                                         onMouseEnter={(e) => {
-                                            if (selectedConversationId !== conversation.id) {
-                                                e.currentTarget.style.background = '#f6f8fa';
-                                            }
+                                            if (selectedConversationId !== conversation.id) e.currentTarget.style.background = '#f6f8fa';
                                         }}
                                         onMouseLeave={(e) => {
-                                            if (selectedConversationId !== conversation.id) {
-                                                e.currentTarget.style.background = 'transparent';
-                                            }
+                                            if (selectedConversationId !== conversation.id) e.currentTarget.style.background = 'transparent';
                                         }}
                                     >
                                         <Badge dot={isOnline} status="success" offset={[-4, 28]}>
@@ -919,51 +811,22 @@ export default function MessagesPage() {
                                             </Avatar>
                                         </Badge>
                                         <div style={{ minWidth: 0, flex: 1 }}>
-                                            <div style={{ 
-                                                display: 'flex', 
-                                                justifyContent: 'space-between', 
-                                                alignItems: 'baseline' 
-                                            }}>
-                                                <span style={{ 
-                                                    fontWeight: 500, 
-                                                    fontSize: 13, 
-                                                    whiteSpace: 'nowrap', 
-                                                    overflow: 'hidden', 
-                                                    textOverflow: 'ellipsis' 
-                                                }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                                                <span style={{ fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                     {conversation.title}
                                                 </span>
                                                 {conversation.lastMessageAt && (
-                                                    <span style={{ 
-                                                        fontSize: 10, 
-                                                        color: '#8c959f', 
-                                                        flexShrink: 0, 
-                                                        marginLeft: 6 
-                                                    }}>
-                                                        {formatDateTime(conversation.lastMessageAt)}
+                                                    <span style={{ fontSize: 10, color: '#8c959f', flexShrink: 0, marginLeft: 6 }}>
+                                                        {formatDate(conversation.lastMessageAt)}
                                                     </span>
                                                 )}
                                             </div>
-                                            <div style={{ 
-                                                display: 'flex', 
-                                                justifyContent: 'space-between', 
-                                                alignItems: 'center' 
-                                            }}>
-                                                <span style={{ 
-                                                    fontSize: 12, 
-                                                    color: '#656d76', 
-                                                    whiteSpace: 'nowrap', 
-                                                    overflow: 'hidden', 
-                                                    textOverflow: 'ellipsis' 
-                                                }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ fontSize: 12, color: '#656d76', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                     {conversation.lastMessage ?? 'No messages yet'}
                                                 </span>
                                                 {conversation.unreadCount > 0 && (
-                                                    <Badge 
-                                                        count={conversation.unreadCount} 
-                                                        size="small" 
-                                                        style={{ marginLeft: 6 }} 
-                                                    />
+                                                    <Badge count={conversation.unreadCount} size="small" style={{ marginLeft: 6 }} />
                                                 )}
                                             </div>
                                         </div>
@@ -974,16 +837,10 @@ export default function MessagesPage() {
                     </div>
                 </div>
 
-                {/* Right panel: chat */}
+                {/* Right panel */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                     {!selectedConversation ? (
-                        <div style={{ 
-                            flex: 1, 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            color: '#656d76' 
-                        }}>
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#656d76' }}>
                             <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontSize: 40, marginBottom: 8 }}>💬</div>
                                 <div>Select a conversation to start chatting</div>
@@ -992,14 +849,7 @@ export default function MessagesPage() {
                     ) : (
                         <>
                             {/* Header */}
-                            <div style={{ 
-                                padding: '12px 16px', 
-                                borderBottom: '1px solid #d0d7de', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: 10,
-                                flexShrink: 0,
-                            }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid #d0d7de', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                                 <Badge dot={isOtherOnline} status="success" offset={[-4, 24]}>
                                     <Avatar
                                         size={36}
@@ -1011,9 +861,7 @@ export default function MessagesPage() {
                                     </Avatar>
                                 </Badge>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                                        {selectedConversation.title}
-                                    </div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{selectedConversation.title}</div>
                                     <div style={{ fontSize: 12, color: '#656d76' }}>
                                         {selectedConversation.type === 'private'
                                             ? (isOtherOnline ? 'Online' : 'Offline')
@@ -1023,22 +871,11 @@ export default function MessagesPage() {
                             </div>
 
                             {/* Messages */}
-                            <div style={{ 
-                                flex: 1, 
-                                overflowY: 'auto', 
-                                padding: '16px',
-                                background: '#fafbfc',
-                            }}>
+                            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', background: '#fafbfc' }}>
                                 {loadingMessages ? (
-                                    <div style={{ textAlign: 'center', padding: 40 }}>
-                                        <Spin />
-                                    </div>
+                                    <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
                                 ) : messages.length === 0 ? (
-                                    <div style={{ 
-                                        textAlign: 'center', 
-                                        color: '#656d76', 
-                                        paddingTop: 40 
-                                    }}>
+                                    <div style={{ textAlign: 'center', color: '#656d76', paddingTop: 40 }}>
                                         <div style={{ fontSize: 32, marginBottom: 8 }}>👋</div>
                                         <div>No messages yet. Say hello!</div>
                                     </div>
@@ -1046,62 +883,28 @@ export default function MessagesPage() {
                                     messages.map((msg) => {
                                         const isOwn = msg.senderId === currentUser?.id;
                                         const isSystem = msg.type === 'system';
-                                        
                                         if (isSystem) {
                                             return (
-                                                <div key={msg.id} style={{ 
-                                                    textAlign: 'center', 
-                                                    margin: '8px 0',
-                                                    fontSize: 12,
-                                                    color: '#8c959f',
-                                                }}>
+                                                <div key={msg.id} style={{ textAlign: 'center', margin: '8px 0', fontSize: 12, color: '#8c959f' }}>
                                                     {msg.content}
                                                 </div>
                                             );
                                         }
-                                        
                                         return (
                                             <div
                                                 key={msg.id}
-                                                style={{ 
-                                                    display: 'flex', 
-                                                    justifyContent: isOwn ? 'flex-end' : 'flex-start', 
-                                                    marginBottom: 12 
-                                                }}
+                                                style={{ display: 'flex', justifyContent: isOwn ? 'flex-end' : 'flex-start', marginBottom: 12 }}
                                             >
-                                                <div style={{ 
-                                                    maxWidth: '70%', 
-                                                    display: 'flex', 
-                                                    flexDirection: 'column', 
-                                                    alignItems: isOwn ? 'flex-end' : 'flex-start' 
-                                                }}>
+                                                <div style={{ maxWidth: '70%', display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
                                                     {!isOwn && (
-                                                        <div style={{ 
-                                                            fontSize: 11, 
-                                                            color: '#656d76', 
-                                                            marginBottom: 2,
-                                                            paddingLeft: 4,
-                                                        }}>
+                                                        <div style={{ fontSize: 11, color: '#656d76', marginBottom: 2, paddingLeft: 4 }}>
                                                             {msg.senderName}
                                                         </div>
                                                     )}
-                                                    <div style={{ 
-                                                        display: 'flex', 
-                                                        alignItems: 'flex-end', 
-                                                        gap: 4,
-                                                        maxWidth: '100%',
-                                                    }}>
+                                                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, maxWidth: '100%' }}>
                                                         {isOwn && !msg.isDeleted && (
-                                                            <Dropdown 
-                                                                menu={{ items: messageMenu(msg) }} 
-                                                                trigger={['click']}
-                                                            >
-                                                                <Button 
-                                                                    type="text" 
-                                                                    size="small" 
-                                                                    icon={<MoreVertical size={14} />} 
-                                                                    style={{ opacity: 0.5 }} 
-                                                                />
+                                                            <Dropdown menu={{ items: messageMenu(msg) }} trigger={['click']}>
+                                                                <Button type="text" size="small" icon={<MoreVertical size={14} />} style={{ opacity: 0.5 }} />
                                                             </Dropdown>
                                                         )}
                                                         <div style={{ maxWidth: '100%' }}>
@@ -1127,18 +930,16 @@ export default function MessagesPage() {
                                                             <div
                                                                 style={{
                                                                     padding: msg.type === 'image' && !msg.isDeleted ? 4 : '8px 12px',
-                                                                    borderRadius: isOwn 
-                                                                        ? '12px 12px 4px 12px' 
-                                                                        : '12px 12px 12px 4px',
-                                                                    background: msg.isDeleted 
-                                                                        ? '#f1f3f5' 
-                                                                        : isOwn 
-                                                                            ? '#1677ff' 
+                                                                    borderRadius: isOwn ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+                                                                    background: msg.isDeleted
+                                                                        ? '#f1f3f5'
+                                                                        : isOwn
+                                                                            ? '#1677ff'
                                                                             : '#f1f3f5',
-                                                                    color: msg.isDeleted 
-                                                                        ? '#8c959f' 
-                                                                        : isOwn 
-                                                                            ? '#fff' 
+                                                                    color: msg.isDeleted
+                                                                        ? '#8c959f'
+                                                                        : isOwn
+                                                                            ? '#fff'
                                                                             : '#24292f',
                                                                     fontSize: 14,
                                                                     fontStyle: msg.isDeleted ? 'italic' : 'normal',
@@ -1155,16 +956,11 @@ export default function MessagesPage() {
                                                                         style={{ borderRadius: 8, display: 'block' }}
                                                                     />
                                                                 ) : msg.type === 'file' && msg.attachmentUrl && !msg.isDeleted ? (
-                                                                    <a 
-                                                                        href={msg.attachmentUrl} 
-                                                                        target="_blank" 
-                                                                        rel="noreferrer" 
-                                                                        style={{ 
-                                                                            color: isOwn ? '#fff' : '#1677ff', 
-                                                                            display: 'flex', 
-                                                                            alignItems: 'center', 
-                                                                            gap: 6 
-                                                                        }}
+                                                                    <a
+                                                                        href={msg.attachmentUrl}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        style={{ color: isOwn ? '#fff' : '#1677ff', display: 'flex', alignItems: 'center', gap: 6 }}
                                                                     >
                                                                         <FileIcon size={14} /> {msg.attachmentName ?? 'Download file'}
                                                                     </a>
@@ -1174,26 +970,13 @@ export default function MessagesPage() {
                                                             </div>
                                                         </div>
                                                         {!isOwn && !msg.isDeleted && (
-                                                            <Dropdown 
-                                                                menu={{ items: messageMenu(msg) }} 
-                                                                trigger={['click']}
-                                                            >
-                                                                <Button 
-                                                                    type="text" 
-                                                                    size="small" 
-                                                                    icon={<MoreVertical size={14} />} 
-                                                                    style={{ opacity: 0.5 }} 
-                                                                />
+                                                            <Dropdown menu={{ items: messageMenu(msg) }} trigger={['click']}>
+                                                                <Button type="text" size="small" icon={<MoreVertical size={14} />} style={{ opacity: 0.5 }} />
                                                             </Dropdown>
                                                         )}
                                                     </div>
-                                                    <div style={{ 
-                                                        fontSize: 10, 
-                                                        color: '#8c959f', 
-                                                        marginTop: 2,
-                                                        padding: '0 4px',
-                                                    }}>
-                                                        {formatDateTime(msg.createdAt)}
+                                                    <div style={{ fontSize: 10, color: '#8c959f', marginTop: 2, padding: '0 4px' }}>
+                                                        {formatDate(msg.createdAt)}
                                                         {msg.isEdited && !msg.isDeleted ? ' · edited' : ''}
                                                     </div>
                                                 </div>
@@ -1206,13 +989,7 @@ export default function MessagesPage() {
 
                             {/* Typing indicator */}
                             {typingNames.length > 0 && (
-                                <div style={{ 
-                                    padding: '4px 16px', 
-                                    fontSize: 12, 
-                                    color: '#656d76', 
-                                    fontStyle: 'italic',
-                                    flexShrink: 0,
-                                }}>
+                                <div style={{ padding: '4px 16px', fontSize: 12, color: '#656d76', fontStyle: 'italic', flexShrink: 0 }}>
                                     {typingNames.join(', ')} {typingNames.length === 1 ? 'is' : 'are'} typing...
                                 </div>
                             )}
@@ -1235,7 +1012,7 @@ export default function MessagesPage() {
                                     <span>
                                         {editingMessage ? (
                                             <>
-                                                <Pencil size={12} style={{ marginRight: 4, verticalAlign: -1 }} /> 
+                                                <Pencil size={12} style={{ marginRight: 4, verticalAlign: -1 }} />
                                                 Editing message
                                             </>
                                         ) : (
@@ -1244,25 +1021,12 @@ export default function MessagesPage() {
                                             </>
                                         )}
                                     </span>
-                                    <Button 
-                                        type="text" 
-                                        size="small" 
-                                        icon={<X size={14} />} 
-                                        onClick={resetComposer} 
-                                    />
+                                    <Button type="text" size="small" icon={<X size={14} />} onClick={resetComposer} />
                                 </div>
                             )}
 
-                            {/* Footer / composer */}
-                            <div style={{ 
-                                padding: '12px 16px', 
-                                borderTop: '1px solid #d0d7de', 
-                                display: 'flex', 
-                                gap: 8, 
-                                alignItems: 'flex-end',
-                                flexShrink: 0,
-                                background: '#fff',
-                            }}>
+                            {/* Composer */}
+                            <div style={{ padding: '12px 16px', borderTop: '1px solid #d0d7de', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0, background: '#fff' }}>
                                 <Upload {...buildUploadProps('image')}>
                                     <Tooltip title="Upload image">
                                         <Button icon={<FileIcon size={16} />} />
@@ -1300,5 +1064,14 @@ export default function MessagesPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+// ---------- Export với ErrorBoundary ----------
+export default function MessagesPage() {
+    return (
+        <ErrorBoundary>
+            <MessagesPageContent />
+        </ErrorBoundary>
     );
 }
