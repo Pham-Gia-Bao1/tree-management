@@ -107,19 +107,23 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 /* ─── Horizontal bar chart ───────────────────────────────── */
-function BarChart({
+function BarChart<T extends object>({
   data,
   labelKey,
   valueKey,
   color = '#6366f1',
 }: {
-  data: Record<string, unknown>[];
-  labelKey: string;
-  valueKey: string;
+  data: T[];
+  labelKey: keyof T;
+  valueKey: keyof T;
   color?: string;
 }) {
   const max = useMemo(
-    () => Math.max(...data.map((d) => Number(d[valueKey]) || 0), 1),
+    () =>
+      Math.max(
+        ...data.map((d) => Number(d[valueKey]) || 0),
+        1
+      ),
     [data, valueKey],
   );
 
@@ -133,6 +137,7 @@ function BarChart({
         const label = String(row[labelKey]);
         const value = Number(row[valueKey]);
         const pct = Math.round((value / max) * 100);
+
         return (
           <div key={i}>
             <div
@@ -151,10 +156,12 @@ function BarChart({
                   {label}
                 </Text>
               </Tooltip>
+
               <Text strong style={{ fontSize: 13 }}>
                 {value}
               </Text>
             </div>
+
             <Progress
               percent={pct}
               showInfo={false}
@@ -427,12 +434,12 @@ export default function DashboardPage() {
             {loading ? (
               <Skeleton active paragraph={{ rows: 5 }} />
             ) : (
-              <BarChart
-                data={dashboard?.charts.usersByBranch as BranchUserStat[] ?? []}
-                labelKey="branchName"
-                valueKey="total"
-                color="#6366f1"
-              />
+              <BarChart<BranchUserStat>
+  data={dashboard?.charts.usersByBranch ?? []}
+  labelKey="branchName"
+  valueKey="total"
+  color="#6366f1"
+/>
             )}
           </Card>
         </Col>
