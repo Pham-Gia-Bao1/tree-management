@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    App,
     Avatar,
     Badge,
     Button,
@@ -113,23 +112,15 @@ const supabase = createClient(
 
 /* --------------------------- API envelope helper --------------------------- */
 
-/**
- * Improved API helper with better error handling
- */
 async function unwrapApi<T>(res: Response): Promise<T> {
     let body: unknown = null;
-    let parsedSuccessfully = false;
-    
     try {
         body = await res.json();
-        parsedSuccessfully = true;
     } catch (err) {
         console.error('[unwrapApi] Failed to parse JSON:', err);
-        // If response is not JSON but OK, return empty object
         if (res.ok) {
             return {} as T;
         }
-        // If not OK and not JSON, throw with status
         throw new Error(`HTTP ${res.status}: ${res.statusText || 'Request failed'}`);
     }
 
@@ -144,20 +135,15 @@ async function unwrapApi<T>(res: Response): Promise<T> {
         throw new Error(message);
     }
 
-    // Support standard envelope { success: true, data: T }
     if (asRecord && 'data' in asRecord) {
         return asRecord.data as T;
     }
-    
-    // If response is OK but no data field, return body as is
     return body as T;
 }
 
 /* ------------------------------- Page ------------------------------- */
 
 export default function MessagesPage() {
-    const { message: toast } = App.useApp();
-
     // State
     const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
     const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -198,10 +184,8 @@ export default function MessagesPage() {
                 setIsInitializing(true);
                 setError(null);
 
-                // Check if Supabase is configured
                 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
                     console.warn('Supabase credentials missing. Using mock mode.');
-                    // Use mock data for development
                     if (isMounted) {
                         setCurrentUser({ id: 'mock-user', fullName: 'Mock User' });
                         setConversations([
@@ -225,7 +209,6 @@ export default function MessagesPage() {
                 
                 if (!res.ok) {
                     if (res.status === 401) {
-                        // Not authenticated - allow user to see page but show message
                         console.log('User not authenticated');
                         if (isMounted) {
                             setCurrentUser(null);
@@ -243,7 +226,6 @@ export default function MessagesPage() {
                 console.error('[init] Error:', err);
                 if (isMounted) {
                     setError(err instanceof Error ? err.message : 'Failed to initialize');
-                    // Set mock user for development so UI still works
                     setCurrentUser({ id: 'fallback-user', fullName: 'User (Fallback)' });
                 }
             } finally {
@@ -282,9 +264,7 @@ export default function MessagesPage() {
             setConversations(data ?? []);
         } catch (err) {
             console.error('[loadConversations] Error:', err);
-            toast.error(err instanceof Error ? err.message : 'Failed to load conversations');
-            
-            // If API fails, use mock data for development
+            // Nếu API lỗi, dùng mock data cho dev
             if (process.env.NODE_ENV === 'development') {
                 setConversations([
                     {
@@ -302,7 +282,7 @@ export default function MessagesPage() {
         } finally {
             setLoadingConversations(false);
         }
-    }, [currentUser, toast]);
+    }, [currentUser]);
 
     // Load conversations when user is available
     useEffect(() => {
@@ -320,10 +300,7 @@ export default function MessagesPage() {
             setConversationDetail(data);
         } catch (err) {
             console.error('[loadConversationDetail] Error:', err);
-            // Don't show toast for this error as it's not critical
-            // toast.error(err instanceof Error ? err.message : 'Failed to load conversation details');
-            
-            // Set mock data for development
+            // Fallback mock data for dev
             if (process.env.NODE_ENV === 'development') {
                 setConversationDetail({
                     id: conversationId,
@@ -354,12 +331,11 @@ export default function MessagesPage() {
             setMessages(data?.messages ?? []);
         } catch (err) {
             console.error('[loadMessages] Error:', err);
-            toast.error(err instanceof Error ? err.message : 'Failed to load messages');
             setMessages([]);
         } finally {
             setLoadingMessages(false);
         }
-    }, [currentUser, toast]);
+    }, [currentUser]);
 
     /* ------------------------- Mark conversation read ------------------------- */
 
@@ -379,14 +355,12 @@ export default function MessagesPage() {
                     prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c))
                 );
             } else if (res.status === 404) {
-                // Route doesn't exist yet, just update local state
                 console.warn('[markConversationRead] API route not found, updating local state only');
                 setConversations((prev) => 
                     prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c))
                 );
             }
         } catch (err) {
-            // Best-effort - don't show error to user for this non-critical operation
             console.warn('[markConversationRead] Failed:', err);
         }
     }, [currentUser]);
@@ -400,7 +374,6 @@ export default function MessagesPage() {
         setInputValue('');
         setMessages([]);
         
-        // Load data
         loadConversationDetail(conversationId);
         loadMessages(conversationId);
         markConversationRead(conversationId);
@@ -625,11 +598,10 @@ export default function MessagesPage() {
             broadcastTyping(false);
         } catch (err) {
             console.error('[sendMessage] Error:', err);
-            toast.error(err instanceof Error ? err.message : 'Failed to send message');
         } finally {
             setSending(false);
         }
-    }, [selectedConversationId, currentUser, replyTarget, broadcastTyping, loadConversations, toast]);
+    }, [selectedConversationId, currentUser, replyTarget, broadcastTyping, loadConversations]);
 
     const updateMessage = useCallback(async (messageId: string, content: string) => {
         if (!currentUser) return;
@@ -648,19 +620,16 @@ export default function MessagesPage() {
                 );
                 resetComposer();
             } else if (res.status === 404) {
-                // Route not found - simulate edit locally
                 console.warn('[updateMessage] API route not found, updating locally');
                 setMessages((prev) => 
                     prev.map((m) => (m.id === messageId ? { ...m, content, isEdited: true } : m))
                 );
                 resetComposer();
-                toast.success('Message edited locally (API not available)');
             }
         } catch (err) {
             console.error('[updateMessage] Error:', err);
-            toast.error(err instanceof Error ? err.message : 'Failed to edit message');
         }
-    }, [currentUser, toast]);
+    }, [currentUser]);
 
     const deleteMessage = useCallback(async (messageId: string) => {
         if (!currentUser) return;
@@ -676,18 +645,15 @@ export default function MessagesPage() {
                     prev.map((m) => (m.id === messageId ? { ...m, content: 'Message deleted', isDeleted: true } : m))
                 );
             } else if (res.status === 404) {
-                // Route not found - simulate delete locally
                 console.warn('[deleteMessage] API route not found, updating locally');
                 setMessages((prev) => 
                     prev.map((m) => (m.id === messageId ? { ...m, content: 'Message deleted', isDeleted: true } : m))
                 );
-                toast.success('Message deleted locally (API not available)');
             }
         } catch (err) {
             console.error('[deleteMessage] Error:', err);
-            toast.error(err instanceof Error ? err.message : 'Failed to delete message');
         }
-    }, [currentUser, toast]);
+    }, [currentUser]);
 
     const handleSend = () => {
         if (editingMessage) {
@@ -713,7 +679,6 @@ export default function MessagesPage() {
         accept: kind === 'image' ? 'image/*' : undefined,
         beforeUpload: async (file) => {
             try {
-                // Try to upload
                 const formData = new FormData();
                 formData.append('file', file);
                 const res = await fetch('/api/uploads', { method: 'POST', body: formData });
@@ -728,7 +693,6 @@ export default function MessagesPage() {
                         content: kind === 'image' ? 'Image' : file.name,
                     });
                 } else if (res.status === 404) {
-                    // Upload API not available, simulate with data URL
                     console.warn('[upload] Upload API not found, using data URL');
                     const reader = new FileReader();
                     reader.onload = async (e) => {
@@ -747,7 +711,6 @@ export default function MessagesPage() {
                 }
             } catch (err) {
                 console.error('[upload] Error:', err);
-                toast.error(err instanceof Error ? err.message : 'Upload failed');
             }
             return false;
         },
