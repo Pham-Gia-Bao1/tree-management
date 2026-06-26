@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Avatar,
@@ -32,7 +32,8 @@ import {
   UserAddOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { useDashboard } from '@/hooks/useDashboard';
+
+// Types
 import type {
   RecentMentorRequest,
   RecentTrainingRelation,
@@ -40,16 +41,26 @@ import type {
   BranchUserStat,
   CourseProgressStat,
   TrainingStatusStat,
+  DashboardOverview,
 } from '@/types/dashboard.types';
+import type { UserRecord } from '@/types/user.types';
+import type { BranchRecord } from '@/types/branch.types';
+import type { CourseRecord } from '@/types/course.types';
+import type { TrainingRelationRecord } from '@/types/training-link.types';
+
+// We'll define a minimal type for mentor requests (from /api/mentor-requests)
+interface MentorRequest {
+  id: string;
+  status: string;
+  requester?: { name: string } | null;
+  createdAt: string;
+}
 
 const { Title, Text } = Typography;
 
 /* ─── Date helpers ───────────────────────────────────────── */
 
-/**
- * Format a date string/Date to DD-MM-YYYY
- */
-export function formatDate(value: string | Date | null | undefined): string {
+function formatDate(value: string | Date | null | undefined): string {
   if (!value) return '';
   const d = typeof value === 'string' ? new Date(value) : value;
   if (isNaN(d.getTime())) return '';
@@ -57,29 +68,6 @@ export function formatDate(value: string | Date | null | undefined): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
   return `${dd}-${mm}-${yyyy}`;
-}
-
-/**
- * Format a date string to DD-MM-YYYY HH:MM
- */
-export function formatDateTime(value: string | Date | null | undefined): string {
-  if (!value) return '';
-  const d = typeof value === 'string' ? new Date(value) : value;
-  if (isNaN(d.getTime())) return '';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
-}
-
-/**
- * Parse DD-MM-YYYY string to ISO date string (YYYY-MM-DD)
- */
-export function parseDDMMYYYY(value: string): string {
-  const [dd, mm, yyyy] = value.split('-');
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 /* ─── Status config ──────────────────────────────────────── */
@@ -113,7 +101,7 @@ function SectionTitle({ children }: { children: ReactNode }) {
   );
 }
 
-/* ─── Horizontal bar chart (generic, type-safe) ──────────── */
+/* ─── Horizontal bar chart ──────────────────────────────── */
 function BarChart<T extends object>({
   data,
   labelKey,
@@ -278,64 +266,217 @@ const trainingColumns: ColumnsType<RecentTrainingRelation> = [
   },
 ];
 
-/* ─── Page ───────────────────────────────────────────────── */
+/* ─── Main Page ───────────────────────────────────────────── */
 export default function DashboardPage() {
-  const { dashboard, loading, refreshDashboard } = useDashboard();
+  // ── State ──
+  const [loading, setLoading] = useState(true);
+  const [overview, setOverview] = useState<DashboardOverview>({
+    totalUsers: 0,
+    totalMentors: 0,
+    totalMembers: 0,
+    totalBranches: 0,
+    totalCourses: 0,
+    activeTrainingRelations: 0,
+    completedTrainingRelations: 0,
+    pendingMentorRequests: 0,
+  });
+  const [usersByBranch, setUsersByBranch] = useState<BranchUserStat[]>([]);
+  const [trainingStatus, setTrainingStatus] = useState<TrainingStatusStat[]>([]);
+  const [courseProgress, setCourseProgress] = useState<CourseProgressStat[]>([]);
+  const [recentMentorRequests, setRecentMentorRequests] = useState<RecentMentorRequest[]>([]);
+  const [recentTrainingRelations, setRecentTrainingRelations] = useState<RecentTrainingRelation[]>([]);
+  // Notifications: we'll skip or derive from training relations for demo; set empty.
+  const [recentNotifications, setRecentNotifications] = useState<RecentNotification[]>([]);
 
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Fetch helper ──
+  const fetchDashboardData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 1. Fetch all needed resources in parallel
+      const [usersRes, branchesRes, coursesRes, trainingRes, mentorRequestsRes] = await Promise.all([
+        fetch('/api/users'),
+        fetch('/api/branches'),
+        fetch('/api/courses'),
+        fetch('/api/training-relations'),
+        fetch('/api/mentor-requests'),
+      ]);
+
+      if (!usersRes.ok) throw new Error('Failed to fetch users');
+      if (!branchesRes.ok) throw new Error('Failed to fetch branches');
+      if (!coursesRes.ok) throw new Error('Failed to fetch courses');
+      if (!trainingRes.ok) throw new Error('Failed to fetch training relations');
+      if (!mentorRequestsRes.ok) throw new Error('Failed to fetch mentor requests');
+
+      const usersData = (await usersRes.json()).data as UserRecord[];
+      const branchesData = (await branchesRes.json()).data as BranchRecord[];
+      const coursesData = (await coursesRes.json()).data as CourseRecord[];
+      const trainingData = (await trainingRes.json()).data as TrainingRelationRecord[];
+      const mentorRequestsData = (await mentorRequestsRes.json()).data as MentorRequest[];
+
+      // ── Compute overview ──
+      const totalUsers = usersData.length;
+      const totalMentors = usersData.filter((u) => u.roles.includes('MENTOR')).length;
+      const totalMembers = usersData.filter((u) => u.roles.includes('MEMBER')).length;
+      const totalBranches = branchesData.length;
+      const totalCourses = coursesData.length;
+      const activeTrainingRelations = trainingData.filter((t) => t.status === 'in_progress').length;
+      const completedTrainingRelations = trainingData.filter((t) => t.status === 'completed').length;
+      const pendingMentorRequests = mentorRequestsData.filter((r) => r.status === 'pending').length;
+
+      setOverview({
+        totalUsers,
+        totalMentors,
+        totalMembers,
+        totalBranches,
+        totalCourses,
+        activeTrainingRelations,
+        completedTrainingRelations,
+        pendingMentorRequests,
+      });
+
+      // ── Users by Branch ──
+      const branchMap = new Map(branchesData.map((b) => [b.id, b.name]));
+      const branchCounts = new Map<string, number>();
+      usersData.forEach((u) => {
+        if (u.branchId) {
+          branchCounts.set(u.branchId, (branchCounts.get(u.branchId) || 0) + 1);
+        }
+      });
+      const byBranch: BranchUserStat[] = Array.from(branchCounts.entries()).map(([id, count]) => ({
+        branchName: branchMap.get(id) || id,
+        total: count,
+      }));
+      byBranch.sort((a, b) => b.total - a.total);
+      setUsersByBranch(byBranch);
+
+      // ── Training Status ──
+      const statusCounts = new Map<string, number>();
+      trainingData.forEach((t) => {
+        statusCounts.set(t.status, (statusCounts.get(t.status) || 0) + 1);
+      });
+      const statusStats: TrainingStatusStat[] = Array.from(statusCounts.entries()).map(([status, total]) => ({
+        status: status === 'in_progress' ? 'In Progress' : 'Completed',
+        total,
+      }));
+      setTrainingStatus(statusStats);
+
+      // ── Course Progress ──
+      const courseMap = new Map(coursesData.map((c) => [c.id, c.name]));
+      const courseCounts = new Map<string, number>();
+      trainingData.forEach((t) => {
+        if (t.courseId) {
+          courseCounts.set(t.courseId, (courseCounts.get(t.courseId) || 0) + 1);
+        }
+      });
+      const progressStats: CourseProgressStat[] = Array.from(courseCounts.entries()).map(([id, count]) => ({
+        courseName: courseMap.get(id) || id,
+        total: count,
+      }));
+      progressStats.sort((a, b) => b.total - a.total);
+      setCourseProgress(progressStats);
+
+      // ── Recent Mentor Requests (last 5) ──
+      const sortedRequests = mentorRequestsData
+        .slice()
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5)
+        .map((r) => ({
+          id: r.id,
+          requesterName: r.requester?.name || 'Unknown',
+          status: r.status,
+          createdAt: r.createdAt,
+        }));
+      setRecentMentorRequests(sortedRequests);
+
+      // ── Recent Training Relations (last 5 by createdAt) ──
+      const sortedTraining = trainingData
+        .slice()
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+        .slice(0, 5)
+        .map((t) => ({
+          id: t.id,
+          mentorName: t.mentorName || 'Unknown',
+          discipleName: t.discipleName || 'Unknown',
+          courseName: t.courseName || 'Unknown',
+          status: t.status,
+          startDate: t.startDate,
+        }));
+      setRecentTrainingRelations(sortedTraining);
+
+      // ── Recent Notifications (skip for now) ──
+      setRecentNotifications([]);
+    } catch (err) {
+      console.error('[Dashboard] Error fetching data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // ── KPI cards ──
   const kpiCards = useMemo(
     () => [
       {
         title: 'Total Users',
-        value: dashboard?.overview.totalUsers ?? 0,
+        value: overview.totalUsers,
         icon: <TeamOutlined style={{ fontSize: 22, color: '#6366f1' }} />,
         color: '#ede9fe',
       },
       {
         title: 'Mentors',
-        value: dashboard?.overview.totalMentors ?? 0,
+        value: overview.totalMentors,
         icon: <UserOutlined style={{ fontSize: 22, color: '#0ea5e9' }} />,
         color: '#e0f2fe',
       },
       {
         title: 'Members',
-        value: dashboard?.overview.totalMembers ?? 0,
+        value: overview.totalMembers,
         icon: <UserAddOutlined style={{ fontSize: 22, color: '#f59e0b' }} />,
         color: '#fef3c7',
       },
       {
         title: 'Branches',
-        value: dashboard?.overview.totalBranches ?? 0,
+        value: overview.totalBranches,
         icon: <ApartmentOutlined style={{ fontSize: 22, color: '#10b981' }} />,
         color: '#d1fae5',
       },
       {
         title: 'Courses',
-        value: dashboard?.overview.totalCourses ?? 0,
+        value: overview.totalCourses,
         icon: <BookOutlined style={{ fontSize: 22, color: '#8b5cf6' }} />,
         color: '#ede9fe',
       },
       {
         title: 'Active Relations',
-        value: dashboard?.overview.activeTrainingRelations ?? 0,
+        value: overview.activeTrainingRelations,
         icon: <NodeIndexOutlined style={{ fontSize: 22, color: '#3b82f6' }} />,
         color: '#dbeafe',
       },
       {
         title: 'Completed',
-        value: dashboard?.overview.completedTrainingRelations ?? 0,
+        value: overview.completedTrainingRelations,
         icon: <CheckCircleOutlined style={{ fontSize: 22, color: '#22c55e' }} />,
         color: '#dcfce7',
       },
       {
         title: 'Pending Requests',
-        value: dashboard?.overview.pendingMentorRequests ?? 0,
+        value: overview.pendingMentorRequests,
         icon: <ClockCircleOutlined style={{ fontSize: 22, color: '#f97316' }} />,
         color: '#ffedd5',
       },
     ],
-    [dashboard],
+    [overview],
   );
 
+  // ── Render ──
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* ── Header ── */}
@@ -346,7 +487,7 @@ export default function DashboardPage() {
           </Title>
           <Text type="secondary">Overview of your discipleship system</Text>
         </div>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refreshDashboard()}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => fetchDashboardData()}>
           Refresh
         </Button>
       </div>
@@ -397,7 +538,7 @@ export default function DashboardPage() {
               <Skeleton active paragraph={{ rows: 5 }} />
             ) : (
               <BarChart<BranchUserStat>
-                data={dashboard?.charts.usersByBranch ?? []}
+                data={usersByBranch}
                 labelKey="branchName"
                 valueKey="total"
                 color="#6366f1"
@@ -412,7 +553,7 @@ export default function DashboardPage() {
             {loading ? (
               <Skeleton active paragraph={{ rows: 3 }} />
             ) : (
-              <PieChart data={dashboard?.charts.trainingStatus ?? []} />
+              <PieChart data={trainingStatus} />
             )}
           </Card>
         </Col>
@@ -424,7 +565,7 @@ export default function DashboardPage() {
           <Skeleton active paragraph={{ rows: 5 }} />
         ) : (
           <BarChart<CourseProgressStat>
-            data={dashboard?.charts.courseProgress ?? []}
+            data={courseProgress}
             labelKey="courseName"
             valueKey="total"
             color="#10b981"
@@ -439,7 +580,7 @@ export default function DashboardPage() {
         ) : (
           <Table<RecentMentorRequest>
             rowKey="id"
-            dataSource={dashboard?.recentMentorRequests ?? []}
+            dataSource={recentMentorRequests}
             columns={mentorRequestColumns}
             pagination={false}
             size="small"
@@ -457,7 +598,7 @@ export default function DashboardPage() {
         ) : (
           <Table<RecentTrainingRelation>
             rowKey="id"
-            dataSource={dashboard?.recentTrainingRelations ?? []}
+            dataSource={recentTrainingRelations}
             columns={trainingColumns}
             pagination={false}
             size="small"
@@ -476,7 +617,7 @@ export default function DashboardPage() {
           <Skeleton active paragraph={{ rows: 4 }} />
         ) : (
           <List<RecentNotification>
-            dataSource={dashboard?.recentNotifications ?? []}
+            dataSource={recentNotifications}
             locale={{ emptyText: 'No notifications' }}
             renderItem={(item) => (
               <List.Item
