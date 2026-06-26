@@ -483,10 +483,10 @@ function MessagesPageContent() {
         if (!currentUser || !supabase) return;
         const channel = supabase.channel('online-users', { config: { presence: { key: currentUser.id } } });
         channel
-            .on('presence', { event: 'sync', () => {
+            .on('presence', { event: 'sync' }, () => {
                 const state = channel.presenceState();
                 setOnlineUserIds(new Set(Object.keys(state)));
-            } })
+            })
             .subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     channel.track({ userId: currentUser.id, fullName: currentUser.fullName }).catch(console.error);
