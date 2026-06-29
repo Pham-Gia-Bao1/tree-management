@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
     Input,
     Tag,
@@ -22,7 +22,6 @@ import {
     DatePicker,
     Form,
     App,
-    Divider,
 } from "antd";
 
 import {
@@ -68,68 +67,26 @@ import { TreePersonCard } from "@/components/TreePersonCard/TreePersonCard";
 const { Option } = Select;
 const { Title, Text } = Typography;
 
-// ==================== I18N ====================
-const T: Record<string, Record<string, string>> = {
-    vi: {
-        selectCourse: "Chọn môn học",
-        myDiagram: "Sơ đồ của tôi",
-        dragZoom: "Kéo di chuyển · Zoom chuột · Click chọn node",
-        createRelation: "Tạo liên kết mới",
-        addRelationBtn: "Tạo môn đồ",
-        status: "Trạng thái",
-        startDate: "Ngày bắt đầu",
-        endDate: "Ngày kết thúc",
-        notes: "Ghi chú",
-        info: "Thông tin",
-        properties: "Thuộc tính",
-        runtime: "Cấu hình",
-        variables: "Biến số",
-        save: "Lưu thay đổi",
-        send: "Gửi thư",
-        nodeLibrary: "Node Library",
-        searchMembers: "Tìm kiếm thành viên...",
-        createNode: "+ Create Node"
-    },
-    en: {
-        selectCourse: "Select course",
-        myDiagram: "My Diagram",
-        dragZoom: "Drag pan · Scroll zoom · Click node",
-        createRelation: "Create New Disciple",
-        addRelationBtn: "Create Relation",
-        status: "Status",
-        startDate: "Start Date",
-        endDate: "End Date",
-        notes: "Notes",
-        info: "Info",
-        properties: "Properties",
-        runtime: "Runtime Settings",
-        variables: "Variables",
-        save: "Save Change",
-        send: "Send Message",
-        nodeLibrary: "Node Library",
-        searchMembers: "Search members...",
-        createNode: "+ Create Node"
-    },
-    ko: {
-        selectCourse: "과목 선택",
-        myDiagram: "내 다이어그램",
-        dragZoom: "드래그 이동 · 스크롤 줌 · 클릭 노드",
-        createRelation: "새 제자 만들기",
-        addRelationBtn: "관계 생성",
-        status: "상태",
-        startDate: "시작 날짜",
-        endDate: "종료 날짜",
-        notes: "노트",
-        info: "정보",
-        properties: "속성",
-        runtime: "런타임 설정",
-        variables: "변수",
-        save: "변경 저장",
-        send: "메시지 보내기",
-        nodeLibrary: "노드 라이브러리",
-        searchMembers: "회원 검색...",
-        createNode: "+ 노드 생성"
-    }
+// ==================== DỊCH TIẾNG VIỆT ====================
+const T = {
+    selectCourse: "Chọn lớp/môn học",
+    myDiagram: "Sơ đồ của tôi",
+    dragZoom: "Kéo di chuyển · Zoom chuột · Click chọn node để xem chi tiết",
+    createRelation: "Thêm thành viên cấp dưới",
+    addRelationBtn: "Thêm vào hệ thống",
+    status: "Trạng thái",
+    startDate: "Ngày bắt đầu",
+    endDate: "Ngày kết thúc",
+    notes: "Ghi chú",
+    info: "Tổng quan",
+    properties: "Thuộc tính",
+    runtime: "Chỉ số đào tạo",
+    variables: "Hệ thống cấp bậc",
+    save: "Lưu thay đổi",
+    send: "Gửi tin nhắn",
+    nodeLibrary: "Thư viện lãnh đạo",
+    searchMembers: "Tìm kiếm thành viên...",
+    createNode: "Thêm môn đồ mới"
 };
 
 type Link = {
@@ -143,28 +100,15 @@ type Link = {
 };
 
 type Course = { id: string; name: string };
-type MentorStat = {
-    courseId: string;
-    courseName: string;
-    totalDisciples: number;
-};
-type DescendantNode = {
-    member: MemberProfileRecord;
-    level: number;
-    link: { id: string; startDate?: string; endDate?: string | null };
-};
-type MemberDetailResponse = {
-    member: MemberProfileRecord;
-    mentorStats: MentorStat[];
-    descendants: DescendantNode[];
-    ancestors: AncestorNodeRecord[];
-};
+type MentorStat = { courseId: string; courseName: string; totalDisciples: number };
+type DescendantNode = { member: MemberProfileRecord; level: number; link: { id: string; startDate?: string; endDate?: string | null } };
+type MemberDetailResponse = { member: MemberProfileRecord; mentorStats: MentorStat[]; descendants: DescendantNode[]; ancestors: AncestorNodeRecord[] };
 
 // ==================== HELPER ====================
 const getColorForLevel = (level: number) => {
-    if (level === 0) return "#10B981"; // Root (Workflow Start)
-    if (level === 1) return "#F97316"; // Mentor (Workflow Logic)
-    return "#3B82F6";                 // Disciple (Workflow Transform)
+    if (level === 0) return "#10B981"; // Đấng tối cao - Start
+    if (level === 1) return "#F97316"; // Người hướng dẫn - Logic
+    return "#3B82F6";                 // Môn đồ - Transform
 };
 
 function getSubtreeIds(links: Link[], rootId: string): Set<string> {
@@ -182,7 +126,55 @@ function getSubtreeIds(links: Link[], rootId: string): Set<string> {
     return set;
 }
 
-// ==================== BUILD TREE (LAYOUT) ====================
+// ==================== THUẬT TOÁN XẾP LAYOUT KHÔNG CHỒNG CHÉO ====================
+// Dùng giải thuật tính kích thước cây con để phân bổ chiều Y một cách chính xác.
+function calculateLayoutTree(rootIds: string[], links: Link[], levelMap: Record<string, number>) {
+    const posMap: Record<string, { x: number; y: number }> = {};
+    const NODE_W = 280;
+    const NODE_H = 80;
+    const GAP_X = 300;
+    const GAP_Y = 20; // Khoảng cách dọc, được tính dựa trên số lượng node con thực tế
+    
+    // Bước 1: Đếm kích thước cây con (bao gồm cả chính nó)
+    const subtreeSize: Record<string, number> = {};
+    const dfsCount = (id: string) => {
+        const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
+        if (children.length === 0) {
+            subtreeSize[id] = 1;
+            return 1;
+        }
+        let total = 0;
+        children.forEach(child => total += dfsCount(child));
+        subtreeSize[id] = total;
+        return total;
+    };
+    rootIds.forEach(root => dfsCount(root));
+
+    // Bước 2: DFS gán vị trí Y dựa trên kích thước cây con
+    // Mỗi node được gán trục Y dựa trên việc nhánh anh em trước nó chiếm bao nhiêu không gian
+    let yBase = 0;
+    const assignY = (id: string, startY: number) => {
+        const level = levelMap[id] || 0;
+        // X tương ứng với cấp độ (cột dọc)
+        posMap[id] = { x: level * GAP_X + 150, y: startY * (NODE_H + GAP_Y) };
+        
+        let yOffset = startY;
+        const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
+        children.forEach(child => {
+            assignY(child, yOffset);
+            yOffset += subtreeSize[child]; // Nhảy xuống vị trí mới bắt đầu từ đáy của cây con vừa xếp
+        });
+    };
+
+    rootIds.forEach(root => {
+        assignY(root, yBase);
+        yBase += subtreeSize[root]; // Cộng dồn kích thước của root hiện tại cho root tiếp theo
+    });
+
+    return posMap;
+}
+
+// ==================== BUILD TREE ====================
 function buildTreeForCourse(
     links: Link[],
     memberMap: Map<string, MemberProfileRecord>,
@@ -212,19 +204,8 @@ function buildTreeForCourse(
         });
     }
 
-    const byLevel: Record<number, string[]> = {};
-    Object.entries(levelMap).forEach(([id, lv]) => { byLevel[lv] ||= []; byLevel[lv].push(id); });
-
-    const posMap: Record<string, { x: number; y: number }> = {};
-    const NODE_W = 280, NODE_H = 80, GAP_X = 300, GAP_Y = 60;
-    Object.keys(byLevel).forEach(lvStr => {
-        const lv = Number(lvStr);
-        const ids = byLevel[lv];
-        const startY = -(ids.length * (NODE_H + GAP_Y) / 2) + (NODE_H / 2);
-        ids.forEach((id, i) => {
-            posMap[id] = { x: lv * GAP_X + 100, y: startY + i * (NODE_H + GAP_Y) };
-        });
-    });
+    // Gọi thuật toán xếp layout không overlap
+    const posMap = calculateLayoutTree(rootIds, links, levelMap);
 
     const subtreeIds = focusMemberId ? getSubtreeIds(links, focusMemberId) : null;
     const nodes: Node[] = [];
@@ -234,12 +215,12 @@ function buildTreeForCourse(
     const allMemberIds = new Set([...allMentorIds, ...allDiscipleIds]);
     const rootInSubtree = !subtreeIds || (focusMemberId ? rootIds.includes(focusMemberId) : false);
 
-    // Root Node
+    // Root Node (Đấng tối cao)
     nodes.push({
         id: "root",
         type: "rootNode",
-        position: { x: -130, y: -80 },
-        data: { courseName: "Root Course", isDimmed: subtreeIds ? !rootInSubtree : false },
+        position: { x: -100, y: 0 },
+        data: { courseName: "Đấng Tối Cao (Khởi Đầu)", isDimmed: subtreeIds ? !rootInSubtree : false },
     });
     addedNodeIds.add("root");
 
@@ -281,6 +262,7 @@ function buildTreeForCourse(
             pathOptions: { borderRadius: 8 },
         } as Edge);
     });
+    // Nối từ Root đến các nhánh gốc
     rootIds.forEach(rid => {
         const highlighted = !subtreeIds || (subtreeIds && subtreeIds.has(rid) && rootInSubtree);
         const dimmed = subtreeIds && !highlighted;
@@ -299,7 +281,7 @@ function buildTreeForCourse(
     return { nodes, edges };
 }
 
-// ==================== CUSTOM NODES (WORKFLOW STYLE) ====================
+// ==================== CUSTOM NODES ====================
 const WorkflowNodeBase = ({ data, children }: { data: any, children: React.ReactNode }) => {
     const { member, level, isDimmed, isFocus, isMentor, onEyeClick, discipleCount } = data;
     const color = getColorForLevel(level);
@@ -307,7 +289,7 @@ const WorkflowNodeBase = ({ data, children }: { data: any, children: React.React
     
     return (
         <div style={{
-            width: isRoot ? 180 : 260,
+            width: isRoot ? 200 : 280,
             background: isFocus ? "#F9FAFB" : "#ffffff",
             border: isFocus ? `2px solid ${color}` : `1px solid #E5E7EB`,
             borderRadius: 12,
@@ -320,19 +302,18 @@ const WorkflowNodeBase = ({ data, children }: { data: any, children: React.React
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F3F4F6", paddingBottom: 6, marginBottom: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: "#111827", display: "flex", alignItems: "center", gap: 6 }}>
                     {isRoot ? <BookOpen size={14} /> : <User size={14} />}
-                    {isRoot ? "Root Course" : (member?.fullName || "Unknown")}
+                    {isRoot ? "Đấng Tối Cao" : (member?.fullName || "Người vô danh")}
                 </div>
                 <div>
-                    {isRoot && <Tag color="green" style={{ fontSize: 10 }}>Input</Tag>}
-                    {!isRoot && isMentor && <Tag color="orange" style={{ fontSize: 10 }}>Logic</Tag>}
-                    {!isRoot && !isMentor && <Tag color="blue" style={{ fontSize: 10 }}>Transform</Tag>}
+                    {isRoot && <Tag color="success" style={{ fontSize: 10 }}>Khởi nguồn</Tag>}
+                    {!isRoot && isMentor && <Tag color="warning" style={{ fontSize: 10 }}>Người HD</Tag>}
+                    {!isRoot && !isMentor && <Tag color="processing" style={{ fontSize: 10 }}>Môn đồ</Tag>}
                 </div>
             </div>
             <div style={{ fontSize: 11, color: "#6B7280", display: "flex", flexDirection: "column", gap: 2 }}>
                 {children}
             </div>
 
-            {/* Eye Button - thay vì click node mở right panel, chúng ta cho vào node */}
             <div style={{ position: "absolute", top: 8, right: 8, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onEyeClick(member?.id); }}>
                 <EyeOutlined style={{ color: "#9CA3AF", fontSize: 14 }} />
             </div>
@@ -343,22 +324,19 @@ const WorkflowNodeBase = ({ data, children }: { data: any, children: React.React
     );
 };
 
-const RootNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div>Entry point for course.</div></WorkflowNodeBase>;
-const MentorNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="geekblue">Mentor</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Môn đồ: {data.discipleCount || 0}</div></WorkflowNodeBase>;
-const DiscipleNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="green">Disciple</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Bắt đầu: {data.link?.startDate || "N/A"}</div></WorkflowNodeBase>;
+const RootNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div>Sự khởi đầu của hệ thống môn đồ.</div></WorkflowNodeBase>;
+const MentorNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="geekblue">Người dẫn dắt</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Môn đồ dưới quyền: {data.discipleCount || 0}</div></WorkflowNodeBase>;
+const DiscipleNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="green">Học viên</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Gia nhập từ: {data.link?.startDate || "Chưa có"}</div></WorkflowNodeBase>;
 
 const nodeTypes = { rootNode: RootNode, mentorNode: MentorNode, discipleNode: DiscipleNode };
 
 // ==================== MAIN COMPONENT ====================
 export default function Diagram() {
     const { message } = App.useApp();
-    const [lang] = useState<"vi" | "en" | "ko">("vi");
-    const t = T[lang];
-
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedCourse, setSelectedCourse] = useState("");
     const [focusMyself, setFocusMyself] = useState(false);
-    const [currentUserId] = useState<string>(""); // Replace with real user ID
+    const [currentUserId] = useState<string>(""); 
 
     const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
     const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -367,7 +345,6 @@ export default function Diagram() {
     const [drawerLoading, setDrawerLoading] = useState(false);
     const [messageInput, setMessageInput] = useState("");
     
-    // Left panel states
     const [leftPanelOpen, setLeftPanelOpen] = useState(false);
     const [leftPanelMember, setLeftPanelMember] = useState<MemberProfileRecord | null>(null);
     const [createForm] = Form.useForm();
@@ -384,7 +361,7 @@ export default function Diagram() {
     useEffect(() => {
         fetch("/api/courses").then(r => r.json()).then(res => {
             if (res.success) { setCourses(res.data || []); if (res.data?.length) setSelectedCourse(res.data[0].id); }
-        }).catch(() => message.error("Lỗi tải course"));
+        }).catch(() => message.error("Lỗi tải khóa học"));
         fetch("/api/members").then(r => r.json()).then(res => {
             if (res.success) setAllMembers(res.data || []);
         }).catch(() => {});
@@ -415,7 +392,7 @@ export default function Diagram() {
         const member = (node.data as any)?.member as MemberProfileRecord | undefined;
         if (member) {
             setLeftPanelMember(member);
-            setLeftPanelOpen(false); // We will move create form to a Modal/Drawer or directly in the left sidebar
+            setLeftPanelOpen(false);
             setRightPanelOpen(true);
             onEyeClick(member.id);
         }
@@ -445,7 +422,7 @@ export default function Diagram() {
         loadTree();
     }, [selectedCourse, focusMyself, currentUserId, message]);
 
-    // ── CRUD (Tạo môn đồ) ──
+    // ── CRUD (Thêm mới) ──
     const handleCreateDiscipleLine = async () => {
         try {
             const values = await createForm.validateFields();
@@ -482,15 +459,15 @@ export default function Diagram() {
                 body: JSON.stringify({ fromId: currentUserId, toId: selectedMemberDetail.member.id, content: messageInput }),
             });
             if (res.ok) { message.success("Gửi thành công!"); setMessageInput(""); }
-        } catch { message.error("Lỗi gửi thư"); }
+        } catch { message.error("Lỗi gửi tin nhắn"); }
     };
 
-    // ── HELPER RENDER RIGHT SIDEBAR ──
+    // ── RENDER SIDEBAR PHẢI (Dữ liệu chi tiết) ──
     const renderRightPanel = () => {
         if (!rightPanelOpen || !selectedMemberDetail) {
             return (
                 <Flex align="center" justify="center" className="h-full text-slate-400">
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chọn một node để xem chi tiết" />
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Click vào một node để xem chi tiết" />
                 </Flex>
             );
         }
@@ -499,8 +476,8 @@ export default function Diagram() {
         const data = selectedMemberDetail;
         return (
             <Flex vertical className="h-full overflow-y-auto p-4 gap-4">
-                {/* 1. INFO (Header) */}
-                <Card size="small" title={<span className="text-slate-700"><Mail size={14} className="inline mr-2"/> Info</span>} className="shadow-none border-slate-200">
+                {/* 1. TỔNG QUAN */}
+                <Card size="small" title={<span className="text-slate-700"><Mail size={14} className="inline mr-2"/> Tổng quan</span>} className="shadow-none border-slate-200">
                     <div className="space-y-2">
                         <div className="flex items-center gap-2">
                             <Avatar size={36} style={{ background: theme.defaultConfig.token?.colorPrimary }}>{data.member.fullName?.[0]}</Avatar>
@@ -509,19 +486,19 @@ export default function Diagram() {
                     </div>
                 </Card>
 
-                {/* 2. PROPERTIES */}
-                <Card size="small" title={<span className="text-slate-700"><Settings size={14} className="inline mr-2"/> Properties</span>} className="shadow-none border-slate-200">
+                {/* 2. THUỘC TÍNH */}
+                <Card size="small" title={<span className="text-slate-700"><Settings size={14} className="inline mr-2"/> Thuộc tính</span>} className="shadow-none border-slate-200">
                     <Descriptions column={1} size="small" labelStyle={{ color: "#64748B", width: 80 }}>
-                        <Descriptions.Item label="Status"><Tag color={data.member.roles?.length ? "processing" : "default"}>{data.member.roles?.[0] || "Member"}</Tag></Descriptions.Item>
-                        <Descriptions.Item label="Phone">{data.member.phone || "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Birth">{data.member.birthDate || "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Branch">{data.member.branchName || "-"}</Descriptions.Item>
+                        <Descriptions.Item label="Vai trò"><Tag color={data.member.roles?.length ? "processing" : "default"}>{data.member.roles?.[0] || "Thành viên"}</Tag></Descriptions.Item>
+                        <Descriptions.Item label="Điện thoại">{data.member.phone || "-"}</Descriptions.Item>
+                        <Descriptions.Item label="Ngày sinh">{data.member.birthDate || "-"}</Descriptions.Item>
+                        <Descriptions.Item label="Chi hội">{data.member.branchName || "-"}</Descriptions.Item>
                     </Descriptions>
                 </Card>
 
-                {/* 3. RUNTIME SETTINGS (Thống kê đào tạo) */}
+                {/* 3. CHỈ SỐ ĐÀO TẠO */}
                 {data.mentorStats.length > 0 && (
-                    <Card size="small" title={<span className="text-slate-700"><PlayCircle size={14} className="inline mr-2"/> Runtime Settings</span>} className="shadow-none border-slate-200">
+                    <Card size="small" title={<span className="text-slate-700"><PlayCircle size={14} className="inline mr-2"/> Chỉ số đào tạo</span>} className="shadow-none border-slate-200">
                         {data.mentorStats.map(stat => (
                             <div key={stat.courseId} className="flex justify-between py-1 text-sm border-b border-slate-50 border-dashed last:border-0">
                                 <span>{stat.courseName}</span>
@@ -531,75 +508,71 @@ export default function Diagram() {
                     </Card>
                 )}
 
-                {/* 4. VARIABLES (Cây gia phả) */}
-                <Card size="small" title={<span className="text-slate-700"><Database size={14} className="inline mr-2"/> Variables</span>} className="shadow-none border-slate-200 pb-6">
+                {/* 4. CẤP BẬC (Gia phả) */}
+                <Card size="small" title={<span className="text-slate-700"><Database size={14} className="inline mr-2"/> Hệ thống cấp bậc</span>} className="shadow-none border-slate-200 pb-6">
                     <Timeline
                         items={[
                             ...data.ancestors.slice().reverse().map(a => ({ 
                                 color: "blue",
-                                children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100">{a.member.fullName}</div> 
+                                children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100"><span className="font-semibold">Người dẫn dắt:</span> {a.member.fullName}</div> 
                             })),
-                            { color: "green", children: <div className="text-xs bg-green-50 px-2 py-1 rounded border border-green-100 font-semibold text-green-700">{data.member.fullName}</div> },
+                            { color: "green", children: <div className="text-xs bg-green-50 px-2 py-1 rounded border border-green-100 font-semibold text-green-700"> {data.member.fullName} (Đang xem)</div> },
                             ...data.descendants.map(d => ({ 
                                 color: "orange",
-                                children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100 flex justify-between"><span>{d.member.fullName}</span><span className="text-slate-400">LV{d.level}</span></div>
+                                children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100 flex justify-between"><span><span className="font-semibold text-orange-600">Môn đồ:</span> {d.member.fullName}</span><span className="text-slate-400 text-[10px]">Cấp {d.level}</span></div>
                             })),
                         ]}
                     />
                 </Card>
 
-                {/* 5. ACTIONS (Nút lưu / gửi) */}
+                {/* 5. HÀNH ĐỘNG */}
                 <div className="mt-auto sticky bottom-0 bg-white py-3 border-t border-slate-100 flex flex-col gap-2">
-                    <div className="text-xs text-slate-500 mb-1">Send Message</div>
-                    <Input.TextArea rows={2} value={messageInput} onChange={e => setMessageInput(e.target.value)} placeholder={T[lang].send + "..."} className="text-sm"/>
+                    <div className="text-xs text-slate-500 mb-1">Gửi tin nhắn đào tạo</div>
+                    <Input.TextArea rows={2} value={messageInput} onChange={e => setMessageInput(e.target.value)} placeholder="Nhập lời nhắn..." className="text-sm"/>
                     <Button type="primary" icon={<Send size={14} />} onClick={sendMessage} style={{ background: "#F97316", borderColor: "#F97316", width: "100%" }}>
-                        {T[lang].send}
+                        {T.send}
                     </Button>
                 </div>
             </Flex>
         );
     };
 
-    // ── RENDER LAYOUT 3 CỘT ──
+    // ── LAYOUT 3 CỘT ──
     return (
         <div className="h-screen w-full flex flex-col bg-[#f8fafc] font-sans overflow-hidden">
-            {/* Header Breadcrumb (Top) */}
+            {/* Header Top */}
             <div className="flex justify-between items-center px-4 py-3 bg-white border-b border-gray-200 z-10">
                 <div className="flex items-center gap-3">
-                    <Space><div className="font-bold text-slate-700 text-base">{t.nodeLibrary}</div></Space>
+                    <Space><div className="font-bold text-slate-700 text-base">{T.nodeLibrary}</div></Space>
                 </div>
                 <div className="flex items-center gap-2">
                     <Button type={focusMyself ? "primary" : "default"} onClick={() => setFocusMyself(!focusMyself)} icon={<EyeOutlined />}>
-                        {t.myDiagram}
+                        {T.myDiagram}
                     </Button>
                 </div>
             </div>
 
-            {/* Main Layout: 3 Columns */}
             <div className="flex flex-1 overflow-hidden">
-                
-                {/* 1. LEFT SIDEBAR (Node Library) */}
+                {/* 1. LEFT SIDEBAR */}
                 <div className="w-[320px] min-w-[320px] bg-white border-r border-gray-200 flex flex-col h-full">
                     <div className="p-4 border-b border-gray-100">
-                        <Select value={selectedCourse} onChange={setSelectedCourse} style={{ width: "100%", marginBottom: 12 }} placeholder={t.selectCourse}>
+                        <Select value={selectedCourse} onChange={setSelectedCourse} style={{ width: "100%", marginBottom: 12 }} placeholder={T.selectCourse}>
                             {courses.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}
                         </Select>
-                        <Input prefix={<Search size={14} className="text-slate-400"/>} placeholder={t.searchMembers} className="mb-3" />
+                        <Input prefix={<Search size={14} className="text-slate-400"/>} placeholder={T.searchMembers} className="mb-3" />
                         <Button 
                             block 
                             style={{ background: "#F97316", borderColor: "#F97316", color: "white", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} 
                             onClick={() => { setLeftPanelOpen(true); setLeftPanelMember(null); createForm.resetFields(); }}
                         >
-                            <PlusOutlined /> {t.createNode}
+                            <PlusOutlined /> {T.createNode}
                         </Button>
                     </div>
                     
-                    {/* Left Library List Static (Placeholder for course members) */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                        {/* Mockup theo ảnh Workflow */}
-                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1">Inputs</div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700"><BookOpen size={14} className="inline mr-2"/> Start of Tree</div>
-                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1 mt-4">Logic</div>
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1">Hệ thống lãnh đạo</div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700"><BookOpen size={14} className="inline mr-2"/> Đấng Tối Cao (Gốc)</div>
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1 mt-4">Người hướng dẫn</div>
                         {Array.from(memberMap.values()).slice(0, 5).map(m => (
                             <div key={m.id} onClick={() => onEyeClick(m.id)} className="bg-white border border-slate-200 rounded-lg p-2 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors flex items-center gap-2">
                                 <Avatar size={20} style={{ fontSize: 10 }}>{m.fullName?.[0]}</Avatar> {m.fullName}
@@ -608,7 +581,7 @@ export default function Diagram() {
                     </div>
                 </div>
 
-                {/* 2. CENTER CANVAS (React Flow) */}
+                {/* 2. CENTER CANVAS */}
                 <div className="flex-1 relative bg-[#fafbfc]">
                     {loading && <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-20"><Spin size="large"/></div>}
                     <ReactFlow
@@ -627,57 +600,55 @@ export default function Diagram() {
                         <Controls className="!bg-white !border !border-slate-200 !shadow-sm" />
                         <MiniMap className="!bg-white !border !border-slate-200 !shadow-sm" />
                         
-                        {/* Workflow Breadcrumb on Canvas */}
                         <Panel position="top-left" className="bg-white/80 backdrop-blur-sm border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm text-xs text-slate-600">
-                            <div className="font-semibold">{courses.find(c => c.id === selectedCourse)?.name || "Workflow"}</div>
-                            <div className="text-slate-400 text-[10px]">{t.dragZoom}</div>
+                            <div className="font-semibold">{courses.find(c => c.id === selectedCourse)?.name || "Cây Môn Đồ"}</div>
+                            <div className="text-slate-400 text-[10px]">{T.dragZoom}</div>
                         </Panel>
                     </ReactFlow>
                 </div>
 
-                {/* 3. RIGHT SIDEBAR (Properties / Flow Info) */}
+                {/* 3. RIGHT SIDEBAR */}
                 <div className="w-[380px] min-w-[380px] bg-white border-l border-gray-200 flex flex-col h-full">
                     <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center bg-white">
                         <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-800">Flow</span>
+                            <span className="font-semibold text-slate-800">Hệ thống cấp bậc</span>
                             {rightPanelOpen && selectedMemberDetail && (
-                                <Tag color="processing" className="text-[10px]">Active</Tag>
+                                <Tag color="processing" className="text-[10px]">Đang chọn</Tag>
                             )}
                         </div>
                         {rightPanelOpen && (
                             <Button type="text" size="small" icon={<X size={14}/>} onClick={() => { setRightPanelOpen(false); setSelectedMemberDetail(null); }} />
                         )}
                     </div>
-                    {/* Right Sidebar Content */}
                     <div className="flex-1 overflow-hidden">
                         {renderRightPanel()}
                     </div>
                 </div>
             </div>
 
-            {/* Modal/Drawer for Create Node ở Left sidebar */}
+            {/* MODAL THÊM MỚI */}
             {leftPanelOpen && (
                 <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={() => setLeftPanelOpen(false)}>
                     <div className="bg-white rounded-xl shadow-2xl w-[500px] p-6" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-6">
-                            <div className="font-bold text-lg text-slate-800">{t.createRelation}</div>
+                            <div className="font-bold text-lg text-slate-800">{T.createRelation}</div>
                             <Button type="text" icon={<X size={18}/>} onClick={() => setLeftPanelOpen(false)} />
                         </div>
                         <Form form={createForm} layout="vertical" requiredMark="optional">
-                            <Form.Item label={t.status} name="status" initialValue="in_progress">
-                                <Select options={[{ value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' }]} />
+                            <Form.Item label="Trạng thái" name="status" initialValue="in_progress">
+                                <Select options={[{ value: 'in_progress', label: 'Đang đào tạo' }, { value: 'completed', label: 'Đã hoàn thành' }]} />
                             </Form.Item>
                             <Form.Item label="Chọn môn đồ" name="discipleId" rules={[{ required: true }]}>
                                 <Select showSearch optionFilterProp="label" options={allMembers.filter(m => m.id !== leftPanelMember?.id).map(m => ({ label: m.fullName, value: m.id }))} />
                             </Form.Item>
-                            <Form.Item label={t.startDate} name="startDate" rules={[{ required: true }]}><DatePicker className="w-full" /></Form.Item>
-                            <Form.Item label={t.endDate} name="endDate"><DatePicker className="w-full" /></Form.Item>
-                            <Form.Item label={t.notes} name="notes"><Input.TextArea rows={2} /></Form.Item>
+                            <Form.Item label={T.startDate} name="startDate" rules={[{ required: true }]}><DatePicker className="w-full" /></Form.Item>
+                            <Form.Item label={T.endDate} name="endDate"><DatePicker className="w-full" /></Form.Item>
+                            <Form.Item label={T.notes} name="notes"><Input.TextArea rows={2} /></Form.Item>
                         </Form>
                         <div className="flex gap-2 mt-4 justify-end border-t pt-4">
-                            <Button onClick={() => setLeftPanelOpen(false)}>Cancel</Button>
+                            <Button onClick={() => setLeftPanelOpen(false)}>Hủy bỏ</Button>
                             <Button type="primary" loading={creatingLink} onClick={handleCreateDiscipleLine} style={{ background: "#F97316", borderColor: "#F97316" }}>
-                                {t.addRelationBtn}
+                                {T.addRelationBtn}
                             </Button>
                         </div>
                     </div>
