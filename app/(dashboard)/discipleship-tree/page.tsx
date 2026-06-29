@@ -56,6 +56,8 @@ import {
   BackgroundVariant,
   Node,
   Edge,
+  Connection,
+  useReactFlow,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -409,7 +411,6 @@ export default function Diagram() {
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.id === "root") {
       setFocusedNodeId(null);
-      // Có thể giữ nguyên hoặc đóng sidebars tùy ý
       return;
     }
     setFocusedNodeId(prev => (prev === node.id ? null : node.id));
@@ -460,7 +461,7 @@ export default function Diagram() {
     const values = await panelForm.validateFields();
     setSubmitLoading(true);
     try {
-      const res = await fetch('/api/training-relations', { // ✅ Đã sửa endpoint
+      const res = await fetch('/api/training-relations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -490,7 +491,7 @@ export default function Diagram() {
     const values = await panelForm.validateFields();
     setSubmitLoading(true);
     try {
-      const res = await fetch(`/api/training-relations/${editingLinkId}`, { // ✅ Đã sửa endpoint
+      const res = await fetch(`/api/training-relations/${editingLinkId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -534,7 +535,8 @@ export default function Diagram() {
   };
 
   // ==================== PANEL HANDLERS ====================
-  const openCreatePanel = useCallback(() => {
+  // Mở panel tạo mới, nhận mentorId tùy chọn để tự động điền
+  const openCreatePanel = useCallback((mentorId?: string) => {
     setSidebarsVisible(true);
     setPanelMode('create');
     setEditingLinkId(null);
@@ -544,7 +546,8 @@ export default function Diagram() {
     panelForm.resetFields();
     panelForm.setFieldsValue({
       status: 'in_progress',
-      courseId: selectedCourse
+      courseId: selectedCourse,
+      ...(mentorId ? { mentorId } : {}),
     });
   }, [panelForm, selectedCourse]);
 
@@ -553,8 +556,32 @@ export default function Diagram() {
     setSelectedMemberDetail(null);
     setViewingMemberId(null);
     setPanelMode('view');
-    setSidebarsVisible(false); // Ẩn cả hai panel
+    setSidebarsVisible(false);
   }, []);
+
+  // ==================== REACT FLOW CONNECT HANDLERS ====================
+  const { getNode } = useReactFlow();
+
+  const onConnectStart = useCallback((event: any, params: any) => {
+    // Chỉ xử lý khi kéo từ Handle nguồn (source)
+    if (params.handleType === 'source') {
+      const node = getNode(params.nodeId);
+      // Bỏ qua node gốc (root)
+      if (node && node.id !== 'root') {
+        const member = node.data?.member as MemberProfileRecord | undefined;
+        if (member) {
+          openCreatePanel(member.id);
+        }
+      }
+    }
+  }, [getNode, openCreatePanel]);
+
+  const onConnect = useCallback((connection: Connection) => {
+    // Khi kéo thả thành công vào một target, tự động điền disciple
+    if (connection.target) {
+      panelForm.setFieldsValue({ discipleId: connection.target });
+    }
+  }, [panelForm]);
 
   // ==================== RENDER RIGHT PANEL ====================
   const renderRightPanel = () => {
@@ -602,7 +629,7 @@ export default function Diagram() {
       );
     }
 
-    // 2. PANEL CREATE / EDIT FORM (GIỐNG HỆT TrainingRelationsPage)
+    // 2. PANEL CREATE / EDIT FORM
     return (
       <Flex vertical className="h-full overflow-hidden p-4 bg-white">
         <div className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">{panelMode === 'create' ? T.createRelation : T.editRelation}</div>
@@ -734,7 +761,7 @@ export default function Diagram() {
             type="primary"
             icon={<PlusOutlined />}
             style={{ background: "#F97316", borderColor: "#F97316" }}
-            onClick={openCreatePanel}
+            onClick={() => openCreatePanel()}
           >
             {T.createNode}
           </Button>
@@ -760,7 +787,7 @@ export default function Diagram() {
           <div className="w-[320px] min-w-[320px] bg-white border-r border-gray-200 flex flex-col h-full">
             <div className="p-4 border-b border-gray-100">
               <Input prefix={<Search size={14} className="text-slate-400" />} placeholder={T.searchMembers} className="mb-3" />
-              <Button block style={{ background: "#F97316", borderColor: "#F97316", color: "white", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={openCreatePanel}><PlusOutlined /> {T.createNode}</Button>
+              <Button block style={{ background: "#F97316", borderColor: "#F97316", color: "white", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => openCreatePanel()}><PlusOutlined /> {T.createNode}</Button>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1">Hệ thống lãnh đạo</div>
@@ -785,6 +812,8 @@ export default function Diagram() {
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
             nodeTypes={nodeTypes}
+            onConnectStart={onConnectStart}
+            onConnect={onConnect}
             fitView
             fitViewOptions={{ padding: 0.2 }}
             minZoom={0.1}
