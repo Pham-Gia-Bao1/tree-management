@@ -1,6 +1,6 @@
 {
   "token": {
-    "colorPrimary": "#18181B",
+    "colorPrimary": "#F97316",
     "colorText": "#18181B",
     "colorTextSecondary": "#71717A",
     "colorTextTertiary": "#A1A1AA",
@@ -16,9 +16,9 @@
     "borderRadiusXS": 2,
     "fontFamily": "\"Inter\", sans-serif",
     "fontSize": 14,
-    "boxShadow": "0 1px 2px rgba(0,0,0,.03)",
-    "boxShadowSecondary": "0 2px 8px rgba(0,0,0,.04)",
-    "boxShadowTertiary": "0 1px 1px rgba(0,0,0,.02)",
+    "boxShadow": "0 1px 2px rgba(0,0,0,0.03)",
+    "boxShadowSecondary": "0 2px 8px rgba(0,0,0,0.04)",
+    "boxShadowTertiary": "0 1px 1px rgba(0,0,0,0.02)",
     "controlHeight": 40,
     "controlHeightSM": 32,
     "controlHeightLG": 44
@@ -33,27 +33,36 @@
       "controlHeight": 40,
       "fontWeight": 500,
       "defaultShadow": "none",
-      "primaryShadow": "none"
+      "primaryShadow": "none",
+      "colorPrimary": "#F97316",
+      "colorPrimaryHover": "#EA580C",
+      "colorPrimaryActive": "#C2410C"
     },
     "Input": {
       "borderRadius": 6,
       "controlHeight": 40,
-      "activeBorderColor": "#18181B",
-      "activeShadow": "0 0 0 2px rgba(24,24,27,.05)"
+      "activeBorderColor": "#F97316",
+      "hoverBorderColor": "#F97316",
+      "activeShadow": "0 0 0 2px rgba(249, 115, 22, 0.1)"
     },
     "InputNumber": {
-      "borderRadius": 6
+      "borderRadius": 6,
+      "activeBorderColor": "#F97316"
     },
     "Select": {
       "borderRadius": 6,
       "controlHeight": 40,
-      "optionSelectedBg": "#F3F4F6"
+      "optionSelectedBg": "#F3F4F6",
+      "activeBorderColor": "#F97316",
+      "hoverBorderColor": "#F97316"
     },
     "DatePicker": {
-      "borderRadius": 6
+      "borderRadius": 6,
+      "activeBorderColor": "#F97316"
     },
     "TimePicker": {
-      "borderRadius": 6
+      "borderRadius": 6,
+      "activeBorderColor": "#F97316"
     },
     "Table": {
       "borderRadiusLG": 8,
