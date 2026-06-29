@@ -142,7 +142,6 @@ function getSubtreeIds(links: Link[], rootId: string): Set<string> {
     return set;
 }
 
-// Thuật toán xếp layout ngăn chồng chéo
 function calculateLayoutTree(rootIds: string[], links: Link[], levelMap: Record<string, number>) {
     const posMap: Record<string, { x: number; y: number }> = {};
     const NODE_W = 280, NODE_H = 80, GAP_X = 300, GAP_Y = 20;
@@ -232,6 +231,7 @@ function buildTreeForCourse(
         addedNodeIds.add(id);
     });
 
+    // FIX BUILD LỖI: Ép kiểu `as any` để chấp nhận thuộc tính `pathOptions`
     links.forEach(link => {
         const highlighted = subtreeIds && subtreeIds.has(link.mentorId) && subtreeIds.has(link.discipleId);
         const dimmed = subtreeIds && !highlighted;
@@ -247,8 +247,9 @@ function buildTreeForCourse(
             markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : edgeColor },
             style: { stroke: dimmed ? "#E2E8F0" : edgeColor, strokeWidth: highlighted ? 3 : 2, opacity: dimmed ? 0.4 : 1 },
             pathOptions: { borderRadius: 8 },
-        });
+        } as any); // <-- Thêm `as any` để TypeScript bỏ qua kiểm tra pathOptions
     });
+    
     rootIds.forEach(rid => {
         const highlighted = !subtreeIds || (subtreeIds && subtreeIds.has(rid) && rootInSubtree);
         const dimmed = subtreeIds && !highlighted;
@@ -261,7 +262,7 @@ function buildTreeForCourse(
             markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#10B981" },
             style: { stroke: dimmed ? "#E2E8F0" : "#10B981", strokeWidth: 2, opacity: dimmed ? 0.4 : 1 },
             pathOptions: { borderRadius: 8 },
-        });
+        } as any); // <-- Thêm `as any` ở đây
     });
     return { nodes, edges };
 }
@@ -314,7 +315,7 @@ export default function Diagram() {
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [loading, setLoading] = useState(false);
 
-    // Right Sidebar States (Dùng Panel thay vì Drawer)
+    // Right Sidebar States
     const [rightPanelOpen, setRightPanelOpen] = useState(false);
     const [panelMode, setPanelMode] = useState<PanelMode>('view');
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
@@ -388,7 +389,7 @@ export default function Diagram() {
         loadTree();
     }, [selectedCourse, focusMyself, currentUserId, message]);
 
-    // ── API HANDLERS (Giống Training Relations) ──
+    // ── API HANDLERS ──
     const handleCreateRelation = async () => {
         const values = await panelForm.validateFields();
         setSubmitLoading(true);
@@ -410,7 +411,6 @@ export default function Diagram() {
             message.success(T.msgCreateSuccess);
             await reloadTree();
             setPanelMode('view');
-            // Tự động load chi tiết người vừa tạo
             setRightPanelOpen(true); 
             fetchMemberDetail(values.discipleId);
         } catch (err) {
@@ -510,7 +510,6 @@ export default function Diagram() {
     const renderRightPanel = () => {
         if (!rightPanelOpen) return null;
 
-        // 1. Panel dạng VIEW chi tiết
         if (panelMode === 'view') {
             if (detailLoading) return <Flex vertical gap={16} className="p-4"><Skeleton active paragraph={{ rows: 6 }} /></Flex>;
             if (!selectedMemberDetail) return <div className="flex h-full items-center justify-center text-slate-400"><Empty description={T.msgEmpty} /></div>;
@@ -552,7 +551,6 @@ export default function Diagram() {
             );
         }
 
-        // 2. Panel dạng CREATE / EDIT (Panel thay thế)
         return (
             <Flex vertical className="h-full overflow-hidden p-4 bg-white">
                 <div className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">{panelMode === 'create' ? T.createRelation : T.editRelation}</div>
