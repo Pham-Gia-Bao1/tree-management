@@ -340,7 +340,8 @@ function buildTreeForCourse(
     const level = levelMap[id] || 0;
     const isMentor = mentorSet.has(id);
     
-    const nodeData = { 
+    // SỬA LỖI TYPESCRIPT Ở DÒNG NÀY: khai báo kiểu `any` để có thể gán thêm `link` sau này
+    const nodeData: any = { 
       member, 
       level, 
       isFocus, 
@@ -349,7 +350,6 @@ function buildTreeForCourse(
       onEyeClick, 
       discipleCount: discipleCount[id] || 0, 
       isMentor,
-      // Dành cho PlantTree mode
       branchColor: branchColors[id] || "#10B981",
     };
 
