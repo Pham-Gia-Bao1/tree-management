@@ -17,12 +17,12 @@ import {
     Descriptions,
     List,
     Typography,
-    Statistic,
     Skeleton,
     Timeline,
     theme,
     DatePicker,
     Form,
+    App,
 } from "antd";
 
 import {
@@ -35,10 +35,10 @@ import {
     X,
     Send,
     UserPlus,
+    BookOpen,
 } from "lucide-react";
 
 import {
-    BookOutlined,
     EyeOutlined,
 } from "@ant-design/icons";
 
@@ -74,6 +74,12 @@ const T: Record<string, Record<string, string>> = {
         messagePlaceholder: "Nhập nội dung thư tín...",
         dragZoom: "Kéo để di chuyển · Cuộn để zoom · Click node để xem nhánh · Nhấn 👁 để xem chi tiết",
         send: "Gửi",
+        createRelation: "Thêm liên kết đào tạo",
+        addRelationBtn: "Tạo liên kết",
+        status: "Trạng thái",
+        startDate: "Ngày bắt đầu",
+        endDate: "Ngày kết thúc",
+        notes: "Ghi chú"
     },
     en: {
         selectCourse: "Select course",
@@ -81,6 +87,12 @@ const T: Record<string, Record<string, string>> = {
         messagePlaceholder: "Type your message...",
         dragZoom: "Drag to pan · Scroll to zoom · Click node to highlight branch · Click 👁 for details",
         send: "Send",
+        createRelation: "Create Training Relation",
+        addRelationBtn: "Create Relation",
+        status: "Status",
+        startDate: "Start Date",
+        endDate: "End Date",
+        notes: "Notes"
     },
     ko: {
         selectCourse: "과목 선택",
@@ -88,6 +100,12 @@ const T: Record<string, Record<string, string>> = {
         messagePlaceholder: "서신 내용을 입력하세요...",
         dragZoom: "드래그로 이동 · 스크롤로 확대/축소 · 노드 클릭 시 하위 트리 강조 · 👁 클릭 시 상세 정보",
         send: "보내기",
+        createRelation: "교육 관계 만들기",
+        addRelationBtn: "관계 생성",
+        status: "상태",
+        startDate: "시작 날짜",
+        endDate: "종료 날짜",
+        notes: "노트"
     },
 };
 
@@ -98,6 +116,7 @@ type Link = {
     startDate?: string;
     endDate?: string | null;
     status?: "in_progress" | "completed";
+    notes?: string;
 };
 
 type Course = { id: string; name: string };
@@ -119,6 +138,25 @@ type MemberDetailResponse = {
     mentorStats: MentorStat[];
     descendants: DescendantNode[];
     ancestors: AncestorNodeRecord[];
+};
+
+// ==================== HELPER: XÁC ĐỊNH MÀU THEO CẤP ĐỘ ====================
+const getColorForLevel = (level: number) => {
+    if (level === 0) return "#14B8A6"; // Teal
+    if (level === 1) return "#F97316"; // Orange
+    return "#3B82F6"; // Blue
+};
+
+const getColorForLevelLabel = (level: number) => {
+    if (level === 0) return "Xanh ngọc";
+    if (level === 1) return "Cam";
+    return "Xanh dương";
+};
+
+const getColorForLevelLabelEng = (level: number) => {
+    if (level === 0) return "Teal (Level 1)";
+    if (level === 1) return "Orange (Level 2)";
+    return "Blue (Level 3+)";
 };
 
 // ==================== SUBTREE HELPER ====================
@@ -144,12 +182,13 @@ function buildTreeForCourse(
     focusMemberId: string | undefined,
     onEyeClick: (memberId: string) => void
 ) {
-    if (!links.length) return { nodes: [], edges: [] as Edge[] };
+    if (!links.length && !focusMemberId) return { nodes: [], edges: [] as Edge[] };
 
+    // 1. Xác định root và BFS tính level cho từng node
     const allMentorIds = [...new Set(links.map(l => l.mentorId))];
     const allDiscipleIds = [...new Set(links.map(l => l.discipleId))];
     const rootIds = allMentorIds.filter(id => !allDiscipleIds.includes(id));
-
+    
     const discipleCount: Record<string, number> = {};
     links.forEach(l => { discipleCount[l.mentorId] = (discipleCount[l.mentorId] || 0) + 1; });
 
@@ -169,21 +208,31 @@ function buildTreeForCourse(
         });
     }
 
+    // 2. Nhóm các node theo cấp độ để tạo cột Sitemap
     const byLevel: Record<number, string[]> = {};
-    Object.entries(levelMap).forEach(([id, lv]) => { byLevel[lv] ||= []; byLevel[lv].push(id); });
+    Object.entries(levelMap).forEach(([id, lv]) => { 
+        byLevel[lv] ||= []; 
+        byLevel[lv].push(id); 
+    });
 
+    // 3. Tính toán vị trí XY giống Sitemap
     const posMap: Record<string, { x: number; y: number }> = {};
-    const NODE_W = 200, NODE_H = 100, GAP_X = 50, GAP_Y = 120;
+    const NODE_W = 240, NODE_H = 60, GAP_X = 280, GAP_Y = 40;
 
-    Object.entries(byLevel).forEach(([lvStr, ids]) => {
+    Object.keys(byLevel).forEach(lvStr => {
         const lv = Number(lvStr);
-        const totalW = ids.length * NODE_W + (ids.length - 1) * GAP_X;
-        const startX = -totalW / 2;
+        const ids = byLevel[lv];
+        // Căn giữa theo chiều dọc cho các node cùng cấp độ
+        const startY = -(ids.length * (NODE_H + GAP_Y) / 2) + (NODE_H / 2);
         ids.forEach((id, i) => {
-            posMap[id] = { x: startX + i * (NODE_W + GAP_X), y: lv * (NODE_H + GAP_Y) };
+            posMap[id] = { 
+                x: lv * GAP_X + 150, 
+                y: startY + i * (NODE_H + GAP_Y) 
+            };
         });
     });
 
+    // 4. Xác định highlight/dimmed nếu có focus
     const subtreeIds = focusMemberId ? getSubtreeIds(links, focusMemberId) : null;
 
     const nodes: Node[] = [];
@@ -194,44 +243,56 @@ function buildTreeForCourse(
 
     const rootInSubtree = !subtreeIds || (focusMemberId ? rootIds.includes(focusMemberId) : false);
 
+    // 5. Thêm Root Node
     nodes.push({
         id: "root",
         type: "rootNode",
-        position: { x: -110, y: -160 },
+        position: { x: -100, y: -80 },
         data: { courseName: "Môn học Kinh Thánh", isDimmed: subtreeIds ? !rootInSubtree : false },
     });
     addedNodeIds.add("root");
 
+    // 6. Thêm các node thành viên (Mentor và Disciple)
     allMemberIds.forEach(id => {
         if (addedNodeIds.has(id)) return;
         const member = memberMap.get(id);
         const isFocus = focusMemberId === id;
         const isInSubtree = subtreeIds ? subtreeIds.has(id) : false;
         const isDimmed = subtreeIds ? !isInSubtree : false;
+        const level = levelMap[id] || 0;
         const isMentor = mentorSet.has(id);
 
+        const baseNode = {
+            id,
+            position: posMap[id] || { x: 0, y: 0 },
+            data: { 
+                member, 
+                level, 
+                isFocus, 
+                isInSubtree, 
+                isDimmed, 
+                onEyeClick,
+                discipleCount: discipleCount[id] || 0,
+                isMentor 
+            }
+        };
+
         if (isMentor) {
-            nodes.push({
-                id,
-                type: "mentorNode",
-                position: posMap[id] || { x: 0, y: 0 },
-                data: { member, discipleCount: discipleCount[id] || 0, isFocus, isInSubtree, isDimmed, onEyeClick },
-            });
+            nodes.push({ ...baseNode, type: "mentorNode" });
         } else {
             const link = links.find(l => l.discipleId === id);
-            nodes.push({
-                id,
-                type: "discipleNode",
-                position: posMap[id] || { x: 0, y: 0 },
-                data: { member, link, isFocus, isInSubtree, isDimmed, onEyeClick },
-            });
+            nodes.push({ ...baseNode, type: "discipleNode", data: { ...baseNode.data, link } });
         }
         addedNodeIds.add(id);
     });
 
+    // 7. Tạo các Edges (đường nối)
     links.forEach(link => {
         const highlighted = subtreeIds && subtreeIds.has(link.mentorId) && subtreeIds.has(link.discipleId);
         const dimmed = subtreeIds && !highlighted;
+        const sourceLevel = levelMap[link.mentorId] || 0;
+        const edgeColor = getColorForLevel(sourceLevel);
+
         edges.push({
             id: `e_${link.id}`,
             source: link.mentorId,
@@ -239,9 +300,9 @@ function buildTreeForCourse(
             type: "smoothstep",
             animated: !dimmed,
             zIndex: highlighted ? 10 : 0,
-            markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#6366F1" },
+            markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : edgeColor },
             style: {
-                stroke: dimmed ? "#E2E8F0" : "#6366F1",
+                stroke: dimmed ? "#E2E8F0" : edgeColor,
                 strokeWidth: highlighted ? 3 : 2,
                 opacity: dimmed ? 0.4 : 1,
             },
@@ -249,6 +310,7 @@ function buildTreeForCourse(
         } as Edge);
     });
 
+    // 8. Kết nối Root với các Node gốc của cây
     rootIds.forEach(rid => {
         const highlighted = !subtreeIds || (subtreeIds && subtreeIds.has(rid) && rootInSubtree);
         const dimmed = subtreeIds && !highlighted;
@@ -258,9 +320,9 @@ function buildTreeForCourse(
             target: rid,
             type: "smoothstep",
             zIndex: highlighted ? 10 : 0,
-            markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#38BDF8" },
+            markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#14B8A6" },
             style: {
-                stroke: dimmed ? "#E2E8F0" : "#38BDF8",
+                stroke: dimmed ? "#E2E8F0" : "#14B8A6",
                 strokeWidth: 2,
                 opacity: dimmed ? 0.4 : 1,
             },
@@ -271,20 +333,74 @@ function buildTreeForCourse(
     return { nodes, edges };
 }
 
-// ==================== EYE BUTTON ====================
+// ==================== CUSTOM NODES (SITEMAP STYLE) ====================
+const NodeCommon = ({ member, level, isDimmed, isMentor, link, discipleCount, onEyeClick }: any) => {
+    const color = getColorForLevel(level);
+    const label = member?.fullName || "Unknown";
+    const branch = member?.branchName || "";
+    
+    return (
+        <div style={{
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            height: 60,
+            minWidth: 200,
+            padding: "0 8px",
+            background: isDimmed ? "rgba(0,0,0,0.03)" : "#FFFFFF",
+            borderRadius: 8,
+            opacity: isDimmed ? 0.4 : 1,
+            transition: "all 0.2s ease",
+            border: isDimmed ? "1px solid #E2E8F0" : `1px solid ${color}30`,
+            boxShadow: isDimmed ? "none" : "0 2px 6px rgba(0,0,0,0.06)",
+            cursor: "pointer"
+        }}>
+            <Handle type="target" position={Position.Left} style={{ 
+                background: color, width: 10, height: 10, border: "2px solid white", 
+                boxShadow: "0 0 0 2px #E2E8F0"
+            }} />
+            
+            <div style={{
+                width: 16,
+                height: 16,
+                borderRadius: "50%",
+                background: color,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+            }} />
+
+            <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {label}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748B" }}>
+                    {branch} {isMentor ? `• ${discipleCount} môn đồ` : (link?.startDate ? `• ${link.startDate}` : "")}
+                </div>
+            </div>
+
+            <EyeButton onClick={() => onEyeClick(member?.id)} />
+
+            <Handle type="source" position={Position.Right} style={{ 
+                background: color, width: 10, height: 10, border: "2px solid white", 
+                boxShadow: "0 0 0 2px #E2E8F0"
+            }} />
+        </div>
+    );
+};
+
 const EyeButton = ({ onClick }: { onClick: () => void }) => (
     <button
         onClick={(e) => { e.stopPropagation(); onClick(); }}
         title="Xem chi tiết"
         style={{
             position: "absolute",
-            top: 6,
-            right: 6,
+            top: 4,
+            right: 4,
             width: 22,
             height: 22,
             border: "none",
             borderRadius: 6,
-            background: "rgba(15,23,42,0.06)",
+            background: "rgba(15,23,42,0.05)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -297,124 +413,38 @@ const EyeButton = ({ onClick }: { onClick: () => void }) => (
     </button>
 );
 
-// ==================== CUSTOM NODES ====================
 const RootNode = ({ data }: { data: { courseName: string; isDimmed: boolean } }) => (
     <div style={{
-        background: "linear-gradient(135deg,#0F172A,#1E3A5F)",
-        color: "#fff", borderRadius: 12, padding: "10px 22px",
-        fontSize: 13, fontWeight: 700,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        background: "#0F172A",
+        color: "#fff",
+        borderRadius: 30,
+        padding: "8px 16px 8px 12px",
+        fontSize: 13,
+        fontWeight: 700,
         boxShadow: "0 4px 20px rgba(15,23,42,0.35)",
-        textAlign: "center", minWidth: 200, border: "2px solid #38BDF8",
+        textAlign: "center",
         opacity: data.isDimmed ? 0.35 : 1,
         transition: "opacity 0.2s",
     }}>
-        <BookOutlined style={{ marginRight: 6, color: "#38BDF8" }} />
+        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#14B8A6" }} />
         {data.courseName}
-        <Handle type="source" position={Position.Bottom} style={{ background: "#14B8A6", width: 10, height: 10 }} />
+        <Handle type="source" position={Position.Right} style={{ background: "#14B8A6", width: 12, height: 12 }} />
     </div>
 );
 
-const MentorNode = ({ data }: {
-    data: {
-        member: MemberProfileRecord;
-        discipleCount: number;
-        isFocus: boolean;
-        isInSubtree: boolean;
-        isDimmed: boolean;
-        onEyeClick: (id: string) => void;
-    };
-}) => {
-    const { member, discipleCount, isFocus, isInSubtree, isDimmed, onEyeClick } = data;
-    const borderColor = isFocus ? "#6366F1" : isInSubtree ? "#A5B4FC" : "#C7D2FE";
-    return (
-        <div style={{
-            position: "relative",
-            background: isFocus ? "linear-gradient(135deg,#EEF2FF,#E0E7FF)" : "#fff",
-            border: `2px solid ${borderColor}`,
-            borderRadius: 12, padding: "10px 14px", width: 196,
-            boxShadow: isFocus
-                ? "0 0 0 4px #6366F130, 0 4px 16px rgba(99,102,241,0.2)"
-                : "0 2px 8px rgba(0,0,0,0.08)",
-            opacity: isDimmed ? 0.35 : 1,
-            transition: "all 0.2s", cursor: "pointer",
-        }}>
-            <Handle type="target" position={Position.Top} style={{ background: "#6366F1", width: 9, height: 9 }} />
-            <EyeButton onClick={() => onEyeClick(member?.id)} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, paddingRight: 18 }}>
-                <Avatar size={32} style={{ background: "linear-gradient(135deg,#6366F1,#8B5CF6)", fontSize: 13, fontWeight: 700 }}>
-                    {member?.fullName?.[0] || "?"}
-                </Avatar>
-                <div>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{member?.fullName}</div>
-                    <div style={{ fontSize: 10, color: "#64748B" }}>{member?.branchName}</div>
-                </div>
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-                <Tag color="geekblue">👤 {discipleCount} môn đồ</Tag>
-                <Tag color="purple">Người HD</Tag>
-            </div>
-            <Handle type="source" position={Position.Bottom} style={{ background: "#6366F1", width: 9, height: 9 }} />
-        </div>
-    );
-};
-
-const DiscipleNode = ({ data }: {
-    data: {
-        member: MemberProfileRecord;
-        link: { id: string; startDate?: string; endDate?: string | null } | undefined;
-        isFocus: boolean;
-        isInSubtree: boolean;
-        isDimmed: boolean;
-        onEyeClick: (id: string) => void;
-    };
-}) => {
-    const { member, link, isFocus, isInSubtree, isDimmed, onEyeClick } = data;
-    const borderColor = isFocus ? "#10B981" : isInSubtree ? "#6EE7B7" : "#BBF7D0";
-    return (
-        <div style={{
-            position: "relative",
-            background: isFocus ? "linear-gradient(135deg,#F0FDF4,#DCFCE7)" : "#fff",
-            border: `2px solid ${borderColor}`,
-            borderRadius: 12, padding: "10px 14px", width: 196,
-            boxShadow: isFocus
-                ? "0 0 0 4px #10B98120, 0 4px 16px rgba(16,185,129,0.15)"
-                : "0 2px 8px rgba(0,0,0,0.06)",
-            opacity: isDimmed ? 0.35 : 1,
-            transition: "all 0.2s", cursor: "pointer",
-        }}>
-            <Handle type="target" position={Position.Top} style={{ background: "#10B981", width: 9, height: 9 }} />
-            <EyeButton onClick={() => onEyeClick(member?.id)} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, paddingRight: 18 }}>
-                <Avatar size={32} style={{ background: "linear-gradient(135deg,#10B981,#059669)", fontSize: 13, fontWeight: 700 }}>
-                    {member?.fullName?.[0] || "?"}
-                </Avatar>
-                <div>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{member?.fullName}</div>
-                    <div style={{ fontSize: 10, color: "#64748B" }}>{member?.branchName}</div>
-                </div>
-            </div>
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                <Tag color="green">Môn đồ</Tag>
-                {link?.startDate && (
-                    <Tag style={{ fontSize: 9, background: "#F8FAFC", border: "1px solid #E2E8F0", color: "#64748B" }}>
-                        {link.startDate} → {link.endDate ?? "-"}
-                    </Tag>
-                )}
-            </div>
-            <Handle type="source" position={Position.Bottom} style={{ background: "#10B981", width: 9, height: 9 }} />
-        </div>
-    );
-};
+const MentorNode = ({ data }: { data: any }) => <NodeCommon {...data} isMentor={true} />;
+const DiscipleNode = ({ data }: { data: any }) => <NodeCommon {...data} isMentor={false} />;
 
 const nodeTypes = { rootNode: RootNode, mentorNode: MentorNode, discipleNode: DiscipleNode };
 
 // ==================== SIDE PANEL SHELL ====================
-// Reusable panel chrome matching the reference screenshot: white bg, left/right border,
-// header row with title + close button, scrollable body.
 const SidePanel = ({
     side,
     title,
-    width = 320,
+    width = 400,
     onClose,
     children,
 }: {
@@ -456,6 +486,7 @@ const SidePanel = ({
 
 // ==================== MAIN COMPONENT ====================
 export default function Diagram() {
+    const { message } = App.useApp();
     const [lang] = useState<"vi" | "en" | "ko">("vi");
     const t = T[lang];
     const { token } = theme.useToken();
@@ -500,9 +531,9 @@ export default function Diagram() {
                 }
             })
             .catch(() => message.error("Không tải được danh sách môn học"));
-    }, []);
+    }, [message]);
 
-    // Load all members for the "add disciple" select
+    // Load all members
     useEffect(() => {
         fetch("/api/members")
             .then(r => r.json())
@@ -528,7 +559,7 @@ export default function Diagram() {
         } finally {
             setDrawerLoading(false);
         }
-    }, [selectedCourse]);
+    }, [selectedCourse, message]);
 
     // Eye icon -> open RIGHT detail panel
     const onEyeClick = useCallback((memberId: string) => {
@@ -539,7 +570,7 @@ export default function Diagram() {
         fetchMemberDetail(memberId);
     }, [fetchMemberDetail]);
 
-    // Node click (not eye) -> highlight branch + open LEFT create panel
+    // Node click -> highlight branch + open LEFT create panel
     const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
         if (node.id === "root") {
             setFocusedNodeId(null);
@@ -553,8 +584,14 @@ export default function Diagram() {
             setLeftPanelOpen(true);
             setRightPanelOpen(false);
             createForm.resetFields();
+            // Set default giá trị cho form
+            createForm.setFieldsValue({
+                mentorId: member.id,
+                status: "in_progress",
+                courseId: selectedCourse
+            });
         }
-    }, [createForm]);
+    }, [createForm, selectedCourse]);
 
     // Rebuild nodes/edges khi focusedNodeId thay đổi
     useEffect(() => {
@@ -594,8 +631,9 @@ export default function Diagram() {
             }
         };
         loadTree();
-    }, [selectedCourse, focusMyself, currentUserId]);
+    }, [selectedCourse, focusMyself, currentUserId, message]);
 
+    // ---- HANDLERS ----
     const handleDrawerPersonClick = useCallback(async (memberId: string) => {
         setFocusedNodeId(memberId);
         await fetchMemberDetail(memberId);
@@ -634,30 +672,32 @@ export default function Diagram() {
         }
     };
 
-    // Submit new disciple line from LEFT panel
+    // Submit new disciple line from LEFT panel (giống TrainingRelations)
     const handleCreateDiscipleLine = async () => {
         try {
             const values = await createForm.validateFields();
             if (!leftPanelMember?.id) return;
+            
             setCreatingLink(true);
             const res = await fetch("/api/discipleship-links", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    courseId: selectedCourse,
-                    mentorId: leftPanelMember.id,
+                    courseId: values.courseId || selectedCourse,
+                    mentorId: values.mentorId || leftPanelMember.id,
                     discipleId: values.discipleId,
-                    startDate: values.startDate
-                        ? values.startDate.format("YYYY-MM-DD")
-                        : undefined,
+                    startDate: values.startDate ? values.startDate.format("YYYY-MM-DD") : new Date().toISOString().slice(0,10),
+                    endDate: values.endDate ? values.endDate.format("YYYY-MM-DD") : null,
+                    status: values.status || "in_progress",
+                    notes: values.notes || null,
                 }),
             });
             const json = await res.json();
             if (json.success) {
                 message.success("Đã thêm môn đồ mới!");
                 createForm.resetFields();
-                // reload tree to reflect new link
-                setSelectedCourse(c => c); // no-op trigger; reload manually below
+                setLeftPanelOpen(false);
+                // reload tree
                 const reload = await fetch(`/api/discipleship-tree?courseId=${selectedCourse}`).then(r => r.json());
                 if (reload.success && reload.data?.links) {
                     setTreeLinks(reload.data.links);
@@ -670,7 +710,6 @@ export default function Diagram() {
                 message.error(json.error?.message || "Không thể thêm môn đồ");
             }
         } catch (err) {
-            // validation error or network error - validateFields throws for invalid form
             if ((err as any)?.errorFields) return;
             message.error("Lỗi kết nối server");
         } finally {
@@ -708,16 +747,15 @@ export default function Diagram() {
                     </Button>
                 </div>
 
-                {/* 3-column row: LEFT panel | Flow canvas | RIGHT panel */}
                 <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
                     {leftPanelOpen && leftPanelMember && (
                         <SidePanel
                             side="left"
-                            width={320}
+                            width={400}
                             title={
                                 <Space>
                                     <UserPlus size={16} />
-                                    <span>Thêm môn đồ mới</span>
+                                    <span>{t.createRelation}</span>
                                 </Space>
                             }
                             onClose={closeLeftPanel}
@@ -740,32 +778,75 @@ export default function Diagram() {
                                     </Flex>
                                 </Card>
 
-                                <Form form={createForm} layout="vertical" requiredMark={false}>
+                                <Form form={createForm} layout="vertical" requiredMark="optional">
+                                    <Form.Item label="Khóa học" name="courseId" hidden>
+                                        <Input />
+                                    </Form.Item>
+                                    
                                     <Form.Item
-                                        name="discipleId"
+                                        label="Người hướng dẫn"
+                                        name="mentorId"
+                                        rules={[{ required: true, message: "Vui lòng chọn mentor" }]}
+                                    >
+                                        <Select 
+                                            placeholder="Chọn Mentor"
+                                            options={allMembers
+                                                .filter(u => u.roles?.includes('MENTOR') || u.roles?.includes('ADMIN'))
+                                                .map(u => ({ label: u.fullName, value: u.id }))
+                                            }
+                                        />
+                                    </Form.Item>
+
+                                    <Form.Item
                                         label="Chọn môn đồ"
+                                        name="discipleId"
                                         rules={[{ required: true, message: "Vui lòng chọn môn đồ" }]}
                                     >
                                         <Select
                                             showSearch
                                             placeholder="Tìm thành viên..."
-                                            optionFilterProp="children"
-                                            filterOption={(input, option) =>
-                                                (option?.children as unknown as string)
-                                                    ?.toLowerCase()
-                                                    .includes(input.toLowerCase())
-                                            }
-                                        >
-                                            {candidateMembers.map(m => (
-                                                <Option key={m.id} value={m.id}>
-                                                    {m.fullName}
-                                                </Option>
-                                            ))}
-                                        </Select>
+                                            optionFilterProp="label"
+                                            options={candidateMembers.map(m => ({ label: m.fullName, value: m.id }))}
+                                        />
                                     </Form.Item>
 
-                                    <Form.Item name="startDate" label="Ngày bắt đầu">
+                                    <Form.Item 
+                                        label={t.startDate} 
+                                        name="startDate"
+                                        rules={[{ required: true, message: "Vui lòng chọn ngày bắt đầu" }]}
+                                    >
                                         <DatePicker style={{ width: "100%" }} />
+                                    </Form.Item>
+
+                                    <Form.Item 
+                                        label={t.endDate} 
+                                        name="endDate"
+                                        rules={[
+                                            ({ getFieldValue }) => ({
+                                                validator(_, value) {
+                                                    const start = getFieldValue('startDate');
+                                                    if (!value || !start || start.isBefore(value) || start.isSame(value, 'day')) {
+                                                        return Promise.resolve();
+                                                    }
+                                                    return Promise.reject(new Error('Ngày kết thúc phải sau ngày bắt đầu'));
+                                                },
+                                            }),
+                                        ]}
+                                    >
+                                        <DatePicker style={{ width: "100%" }} />
+                                    </Form.Item>
+
+                                    <Form.Item label={t.status} name="status" initialValue="in_progress">
+                                        <Select
+                                            options={[
+                                                { value: 'in_progress', label: 'In Progress' },
+                                                { value: 'completed', label: 'Completed' },
+                                            ]}
+                                        />
+                                    </Form.Item>
+
+                                    <Form.Item label={t.notes} name="notes">
+                                        <Input.TextArea rows={2} placeholder="Ghi chú thêm..." />
                                     </Form.Item>
                                 </Form>
 
@@ -775,7 +856,7 @@ export default function Diagram() {
                                     loading={creatingLink}
                                     onClick={handleCreateDiscipleLine}
                                 >
-                                    Tạo liên kết môn đồ
+                                    {t.addRelationBtn}
                                 </Button>
                             </Flex>
                         </SidePanel>
@@ -796,13 +877,15 @@ export default function Diagram() {
                             onNodeClick={onNodeClick}
                             nodeTypes={nodeTypes}
                             fitView
-                            fitViewOptions={{ padding: 0.2 }}
-                            minZoom={0.2}
+                            fitViewOptions={{ padding: 0.3 }}
+                            minZoom={0.1}
                             maxZoom={2.5}
                         >
                             <Background variant={BackgroundVariant.Lines} gap={20} color="#f1f5f9" />
                             <Controls />
                             <MiniMap />
+                            
+                            {/* Hướng dẫn và Legend */}
                             <Panel position="top-right">
                                 <div style={{
                                     background: "#fff",
@@ -812,6 +895,31 @@ export default function Diagram() {
                                     fontSize: 12,
                                 }}>
                                     {t.dragZoom}
+                                </div>
+                            </Panel>
+
+                            <Panel position="bottom-right">
+                                <div style={{
+                                    background: "#fff",
+                                    padding: "14px 16px",
+                                    borderRadius: 12,
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                                    fontSize: 12,
+                                    minWidth: 160
+                                }}>
+                                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Legend</div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                        {[
+                                            { color: "#14B8A6", label: "Level 0 (Gốc)" },
+                                            { color: "#F97316", label: "Level 1 (Mentor)" },
+                                            { color: "#3B82F6", label: "Level 2+ (Disciple)" }
+                                        ].map(item => (
+                                            <div key={item.color} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                <div style={{ width: 12, height: 12, borderRadius: "50%", background: item.color }} />
+                                                <span style={{ color: "#475569" }}>{item.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </Panel>
                         </ReactFlow>
