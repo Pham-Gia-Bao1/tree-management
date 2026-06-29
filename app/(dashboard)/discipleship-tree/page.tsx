@@ -38,6 +38,7 @@ import {
   PlayCircle,
   Database,
   User,
+  TreePine,
 } from "lucide-react";
 
 import { EyeOutlined, PlusOutlined, MenuOutlined } from "@ant-design/icons";
@@ -136,6 +137,18 @@ const getColorForLevel = (level: number) => {
   return "#3B82F6";
 };
 
+// Màu sắc dùng cho các nhánh trong Plant Tree View (giống hình ảnh)
+const BRANCH_COLORS = [
+  "#F97316", // Cam
+  "#10B981", // Xanh lá
+  "#3B82F6", // Xanh dương
+  "#8B5CF6", // Tím
+  "#EC4899", // Hồng
+  "#F59E0B", // Vàng
+  "#06B6D4", // Xanh ngọc
+  "#EF4444", // Đỏ
+];
+
 function getSubtreeIds(links: Link[], rootId: string): Set<string> {
   const set = new Set<string>([rootId]);
   const queue = [rootId];
@@ -151,12 +164,10 @@ function getSubtreeIds(links: Link[], rootId: string): Set<string> {
   return set;
 }
 
+// Layout mặc định (Trái sang Phải)
 function calculateLayoutTree(rootIds: string[], links: Link[], levelMap: Record<string, number>) {
   const posMap: Record<string, { x: number; y: number }> = {};
-  const NODE_W = 280,
-    NODE_H = 80,
-    GAP_X = 300,
-    GAP_Y = 20;
+  const NODE_W = 280, NODE_H = 80, GAP_X = 300, GAP_Y = 20;
   const subtreeSize: Record<string, number> = {};
   const dfsCount = (id: string) => {
     const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
@@ -180,11 +191,65 @@ function calculateLayoutTree(rootIds: string[], links: Link[], levelMap: Record<
   return posMap;
 }
 
+// Layout Plant Tree (Dưới lên trên, phân nhánh giống cây)
+function calculatePlantLayout(rootIds: string[], links: Link[], levelMap: Record<string, number>) {
+  const posMap: Record<string, { x: number; y: number }> = {};
+  const NODE_W = 90;
+  const NODE_H = 25;
+  const GAP_X = 10;
+  const GAP_Y = 50;
+
+  // 1. Tính kích thước cây con (subtree size)
+  const subtreeSize: Record<string, number> = {};
+  const dfsCount = (id: string) => {
+    const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
+    if (children.length === 0) { subtreeSize[id] = 1; return 1; }
+    let total = 0;
+    children.forEach(child => total += dfsCount(child));
+    subtreeSize[id] = total;
+    return total;
+  };
+  rootIds.forEach(root => dfsCount(root));
+
+  // 2. Tìm max level để đảo ngược trục Y (Root ở dưới cùng)
+  let maxLevel = 0;
+  Object.values(levelMap).forEach(lvl => maxLevel = Math.max(maxLevel, lvl));
+
+  // 3. Đệ quy gán tọa độ
+  const assignPos = (id: string, startX: number, level: number) => {
+    const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
+    const nodeWidth = NODE_W;
+    const subtreeWidth = subtreeSize[id] * (NODE_W + GAP_X);
+
+    // Y được đảo ngược: maxLevel - level. Level càng cao (lá) thì Y càng nhỏ (nằm trên cùng)
+    const y = (maxLevel - level) * (NODE_H + GAP_Y) + 50; 
+    const x = startX + subtreeWidth / 2 - nodeWidth / 2;
+
+    posMap[id] = { x, y };
+
+    let childStartX = startX;
+    children.forEach(child => {
+      const childWidth = subtreeSize[child] * (NODE_W + GAP_X);
+      assignPos(child, childStartX, level + 1);
+      childStartX += childWidth;
+    });
+  };
+
+  let currentStartX = 0;
+  rootIds.forEach(root => {
+    assignPos(root, currentStartX, 0);
+    currentStartX += subtreeSize[root] * (NODE_W + GAP_X);
+  });
+
+  return posMap;
+}
+
 function buildTreeForCourse(
   links: Link[],
   memberMap: Map<string, MemberProfileRecord>,
   focusMemberId: string | undefined,
-  onEyeClick: (memberId: string) => void
+  onEyeClick: (memberId: string) => void,
+  viewMode: 'diagram' | 'plantTree' // Thêm param viewMode
 ) {
   if (!links.length && !focusMemberId) return { nodes: [], edges: [] };
   const allMentorIds = [...new Set(links.map(l => l.mentorId))];
@@ -208,7 +273,14 @@ function buildTreeForCourse(
     });
   }
 
-  const posMap = calculateLayoutTree(rootIds, links, levelMap);
+  // Chọn layout dựa trên viewMode
+  let posMap;
+  if (viewMode === 'plantTree') {
+    posMap = calculatePlantLayout(rootIds, links, levelMap);
+  } else {
+    posMap = calculateLayoutTree(rootIds, links, levelMap);
+  }
+
   const subtreeIds = focusMemberId ? getSubtreeIds(links, focusMemberId) : null;
   const nodes: Node[] = [],
     edges: Edge[] = [];
@@ -217,14 +289,48 @@ function buildTreeForCourse(
   const allMemberIds = new Set([...allMentorIds, ...allDiscipleIds]);
   const rootInSubtree = !subtreeIds || (focusMemberId ? rootIds.includes(focusMemberId) : false);
 
-  nodes.push({
-    id: "root",
-    type: "rootNode",
-    position: { x: -100, y: 0 },
-    data: { courseName: "Đấng Tối Cao (Khởi Đầu)", isDimmed: subtreeIds ? !rootInSubtree : false },
-  });
+  // ---- XỬ LÝ ROOT NODE ----
+  if (viewMode === 'plantTree') {
+    // Với Plant Tree, Root được đặt ở giữa dưới cùng
+    let avgX = 0, count = 0, minY = Infinity;
+    Object.values(posMap).forEach(p => { avgX += p.x; count++; minY = Math.min(minY, p.y); });
+    avgX = count > 0 ? avgX / count : 0;
+    posMap['root'] = { x: avgX - 45, y: minY - 80 }; // offset để nối dây
+
+    nodes.push({
+      id: "root",
+      type: "plantNode",
+      position: posMap['root'],
+      data: { member: { fullName: "Khởi Nguồn" }, branchColor: "#6B7280", isRoot: true },
+    });
+  } else {
+    // Layout Diagram cũ (Root bên trái)
+    nodes.push({
+      id: "root",
+      type: "rootNode",
+      position: { x: -100, y: 0 },
+      data: { courseName: "Đấng Tối Cao (Khởi Đầu)", isDimmed: subtreeIds ? !rootInSubtree : false },
+    });
+  }
   addedNodeIds.add("root");
 
+  // ---- XỬ LÝ BRANCH COLORS (CHO PLANT TREE) ----
+  const branchColors: Record<string, string> = {};
+  if (viewMode === 'plantTree') {
+    let colorIndex = 0;
+    const rootChildren = links.filter(l => rootIds.includes(l.mentorId));
+    const assignColorToSubtree = (nodeId: string, color: string) => {
+      branchColors[nodeId] = color;
+      links.filter(l => l.mentorId === nodeId).forEach(l => assignColorToSubtree(l.discipleId, color));
+    };
+    rootChildren.forEach(link => {
+      const color = BRANCH_COLORS[colorIndex % BRANCH_COLORS.length];
+      assignColorToSubtree(link.discipleId, color);
+      colorIndex++;
+    });
+  }
+
+  // ---- XỬ LÝ MEMBER NODES ----
   allMemberIds.forEach(id => {
     if (addedNodeIds.has(id)) return;
     const member = memberMap.get(id);
@@ -233,51 +339,107 @@ function buildTreeForCourse(
     const isDimmed = subtreeIds ? !isInSubtree : false;
     const level = levelMap[id] || 0;
     const isMentor = mentorSet.has(id);
-    const data = { member, level, isFocus, isInSubtree, isDimmed, onEyeClick, discipleCount: discipleCount[id] || 0, isMentor };
-    const node = { id, position: posMap[id] || { x: 0, y: 0 }, data };
-    if (isMentor) nodes.push({ ...node, type: "mentorNode" });
-    else {
-      const link = links.find(l => l.discipleId === id);
-      nodes.push({ ...node, type: "discipleNode", data: { ...data, link } });
+    
+    const nodeData = { 
+      member, 
+      level, 
+      isFocus, 
+      isInSubtree, 
+      isDimmed, 
+      onEyeClick, 
+      discipleCount: discipleCount[id] || 0, 
+      isMentor,
+      // Dành cho PlantTree mode
+      branchColor: branchColors[id] || "#10B981",
+    };
+
+    let nodeType;
+    if (viewMode === 'plantTree') {
+      nodeType = "plantNode";
+    } else {
+      nodeType = isMentor ? "mentorNode" : "discipleNode";
+      // Gắn thêm link cho disciple nếu là diagram
+      if (!isMentor) {
+        const link = links.find(l => l.discipleId === id);
+        nodeData.link = link;
+      }
     }
+
+    const node = { 
+      id, 
+      position: posMap[id] || { x: 0, y: 0 }, 
+      data: nodeData, 
+      type: nodeType 
+    };
+    nodes.push(node as any);
     addedNodeIds.add(id);
   });
 
+  // ---- XỬ LÝ EDGES (ĐƯỜNG NỐI) ----
   links.forEach(link => {
     const highlighted = subtreeIds && subtreeIds.has(link.mentorId) && subtreeIds.has(link.discipleId);
     const dimmed = subtreeIds && !highlighted;
     const sourceLevel = levelMap[link.mentorId] || 0;
-    const edgeColor = getColorForLevel(sourceLevel);
+    
+    let edgeColor = getColorForLevel(sourceLevel);
+    let edgeWidth = 2;
+    let edgeOpacity = 1;
+    let isAnimated = !dimmed;
+    let edgeZIndex = highlighted ? 10 : 0;
+
+    if (viewMode === 'plantTree') {
+      // Plant tree dùng màu của nhánh
+      edgeColor = branchColors[link.discipleId] || "#ccc";
+      edgeWidth = 2;
+      isAnimated = false; // Ít nhấp nháy hơn cho cây tĩnh
+    } else {
+      if (dimmed) { edgeColor = "#E2E8F0"; edgeOpacity = 0.4; }
+      if (highlighted) edgeWidth = 3;
+    }
+
     edges.push({
       id: `e_${link.id}`,
       source: link.mentorId,
       target: link.discipleId,
       type: "smoothstep",
-      animated: !dimmed,
-      zIndex: highlighted ? 10 : 0,
-      markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : edgeColor },
-      style: { stroke: dimmed ? "#E2E8F0" : edgeColor, strokeWidth: highlighted ? 3 : 2, opacity: dimmed ? 0.4 : 1 },
-      pathOptions: { borderRadius: 8 },
+      animated: isAnimated,
+      zIndex: edgeZIndex,
+      markerEnd: { type: MarkerType.ArrowClosed, color: viewMode === 'plantTree' ? edgeColor : (dimmed ? "#E2E8F0" : edgeColor) },
+      style: { stroke: edgeColor, strokeWidth: edgeWidth, opacity: edgeOpacity },
+      pathOptions: { borderRadius: viewMode === 'plantTree' ? 20 : 8 }, // Cong hơn cho Plant Tree
     } as any);
   });
+
+  // ---- XỬ LÝ EDGES NỐI TỪ ROOT ----
   rootIds.forEach(rid => {
     const highlighted = !subtreeIds || (subtreeIds && subtreeIds.has(rid) && rootInSubtree);
     const dimmed = subtreeIds && !highlighted;
+    
+    let edgeColor = "#10B981";
+    let edgeOpacity = 1;
+    if (viewMode === 'plantTree') {
+      edgeColor = branchColors[rid] || "#10B981";
+    } else {
+      if (dimmed) { edgeColor = "#E2E8F0"; edgeOpacity = 0.4; }
+    }
+
     edges.unshift({
       id: `root_${rid}`,
       source: "root",
       target: rid,
       type: "smoothstep",
       zIndex: highlighted ? 10 : 0,
-      markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#10B981" },
-      style: { stroke: dimmed ? "#E2E8F0" : "#10B981", strokeWidth: 2, opacity: dimmed ? 0.4 : 1 },
-      pathOptions: { borderRadius: 8 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : edgeColor },
+      style: { stroke: edgeColor, strokeWidth: 2, opacity: edgeOpacity },
+      pathOptions: { borderRadius: viewMode === 'plantTree' ? 20 : 8 },
     } as any);
   });
+
   return { nodes, edges };
 }
 
 // ==================== CUSTOM NODES ====================
+// Các node Diagram cũ
 const WorkflowNodeBase = ({ data, children }: { data: any, children: React.ReactNode }) => {
   const { member, level, isDimmed, isFocus, isMentor, onEyeClick, discipleCount } = data;
   const color = getColorForLevel(level);
@@ -317,7 +479,46 @@ const WorkflowNodeBase = ({ data, children }: { data: any, children: React.React
 const RootNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div>Sự khởi đầu của hệ thống môn đồ.</div></WorkflowNodeBase>;
 const MentorNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="geekblue">Người dẫn dắt</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Môn đồ dưới quyền: {data.discipleCount || 0}</div></WorkflowNodeBase>;
 const DiscipleNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="green">Học viên</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Gia nhập từ: {data.link?.startDate || "Chưa có"}</div></WorkflowNodeBase>;
-const nodeTypes = { rootNode: RootNode, mentorNode: MentorNode, discipleNode: DiscipleNode };
+
+// Node mới cho Plant Tree (Hình chiếc lá)
+const PlantNode = ({ data }: { data: any }) => {
+  const { member, isDimmed, onEyeClick, branchColor, isRoot } = data;
+  return (
+    <div style={{
+      width: isRoot ? 60 : 100,
+      height: isRoot ? 30 : 25,
+      background: branchColor || "#ddd",
+      borderRadius: isRoot ? 15 : 12,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: 'white',
+      fontSize: isRoot ? 10 : 10,
+      fontWeight: 600,
+      opacity: isDimmed ? 0.4 : 1,
+      border: isRoot ? '2px solid #374151' : '1px solid rgba(255,255,255,0.3)',
+      boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+      position: 'relative',
+      cursor: 'pointer',
+      padding: '0 4px',
+      transition: 'all 0.2s',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    }} onClick={(e) => { e.stopPropagation(); if (!isRoot) onEyeClick(member?.id); }}>
+      {isRoot ? 'Root' : (member?.fullName || 'Unknown')}
+      <Handle type="target" position={Position.Bottom} style={{ background: branchColor, width: 6, height: 6 }} />
+      <Handle type="source" position={Position.Top} style={{ background: branchColor, width: 6, height: 6 }} />
+    </div>
+  );
+};
+
+const nodeTypes = { 
+  rootNode: RootNode, 
+  mentorNode: MentorNode, 
+  discipleNode: DiscipleNode,
+  plantNode: PlantNode 
+};
 
 // ==================== MAIN COMPONENT ====================
 function DiagramContent() {
@@ -330,6 +531,7 @@ function DiagramContent() {
   const [selectedCourse, setSelectedCourse] = useState("");
   const [focusMyself, setFocusMyself] = useState(false);
   const [currentUserId] = useState<string>("");
+  const [viewMode, setViewMode] = useState<'diagram' | 'plantTree'>('diagram'); // NEW STATE
 
   // Tree
   const [treeLinks, setTreeLinks] = useState<Link[]>([]);
@@ -381,24 +583,6 @@ function DiagramContent() {
     } catch { message.error("Lỗi kết nối"); } finally { setDetailLoading(false); }
   }, [selectedCourse, message]);
 
-  // ==================== OPTIONS CHO FORM ====================
-  const mentorOptions = useMemo(
-    () => users
-      .filter((u) => u.roles?.includes('MENTOR') || u.roles?.includes('ADMIN'))
-      .map((u) => ({ value: u.id, label: u.fullName })),
-    [users]
-  );
-
-  const discipleOptions = useMemo(
-    () => users.map((u) => ({ value: u.id, label: u.fullName })),
-    [users]
-  );
-
-  const courseOptions = useMemo(
-    () => courses.map((c) => ({ value: c.id, label: c.name })),
-    [courses]
-  );
-
   // ==================== TREE LOGIC ====================
   const onEyeClick = useCallback((memberId: string) => {
     if (!memberId) return;
@@ -421,12 +605,19 @@ function DiagramContent() {
     }
   }, [onEyeClick]);
 
+  // Cập nhật tree khi thay đổi viewMode, focus, data
   useEffect(() => {
     if (!treeLinks.length) return;
-    const { nodes: n, edges: e } = buildTreeForCourse(treeLinks, memberMap, focusedNodeId ?? undefined, onEyeClick);
+    const { nodes: n, edges: e } = buildTreeForCourse(
+      treeLinks, 
+      memberMap, 
+      focusedNodeId ?? undefined, 
+      onEyeClick,
+      viewMode // Thêm viewMode
+    );
     setNodes(n);
     setEdges(e);
-  }, [focusedNodeId, treeLinks, memberMap, onEyeClick, setNodes, setEdges]);
+  }, [focusedNodeId, treeLinks, memberMap, onEyeClick, setNodes, setEdges, viewMode]);
 
   useEffect(() => {
     if (!selectedCourse) return;
@@ -448,7 +639,7 @@ function DiagramContent() {
     loadTree();
   }, [selectedCourse, focusMyself, currentUserId, message]);
 
-  // ==================== API HANDLERS (CREATE / EDIT) ====================
+  // ==================== API HANDLERS ====================
   const reloadTree = async () => {
     const res = await fetch(`/api/discipleship-tree?courseId=${selectedCourse}`).then(r => r.json());
     if (res.success && res.data?.links) {
@@ -559,32 +750,24 @@ function DiagramContent() {
   }, []);
 
   // ==================== REACT FLOW CONNECT HANDLERS ====================
-  // Sử dụng nodes state để tìm node khi bắt đầu kéo
   const onConnectStart = useCallback((event: any, params: any) => {
     if (params.handleType === 'source') {
-      // Tìm node trong danh sách nodes hiện tại
       const node = nodes.find(n => n.id === params.nodeId);
       if (node && node.id !== 'root') {
         const member = node.data?.member as MemberProfileRecord | undefined;
-        if (member) {
-          openCreatePanel(member.id);
-        }
+        if (member) openCreatePanel(member.id);
       }
     }
   }, [nodes, openCreatePanel]);
 
   const onConnect = useCallback((connection: Connection) => {
-    // Khi kéo thả thành công vào một target, tự động điền disciple
-    if (connection.target) {
-      panelForm.setFieldsValue({ discipleId: connection.target });
-    }
+    if (connection.target) panelForm.setFieldsValue({ discipleId: connection.target });
   }, [panelForm]);
 
   // ==================== RENDER RIGHT PANEL ====================
   const renderRightPanel = () => {
     if (!rightPanelOpen) return null;
 
-    // 1. PANEL VIEW CHI TIẾT
     if (panelMode === 'view') {
       if (detailLoading) return <Flex vertical gap={16} className="p-4"><Skeleton active paragraph={{ rows: 6 }} /></Flex>;
       if (!selectedMemberDetail) return <div className="flex h-full items-center justify-center text-slate-400"><Empty description={T.msgEmpty} /></div>;
@@ -626,106 +809,37 @@ function DiagramContent() {
       );
     }
 
-    // 2. PANEL CREATE / EDIT FORM
+    // Panel CREATE / EDIT FORM
     return (
       <Flex vertical className="h-full overflow-hidden p-4 bg-white">
         <div className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">{panelMode === 'create' ? T.createRelation : T.editRelation}</div>
         <div className="flex-1 overflow-y-auto pr-1">
           <Form form={panelForm} layout="vertical" requiredMark="optional">
-            {/* Select Course */}
             <Form.Item label={T.course} name="courseId" rules={[{ required: true, message: T.msgRequiredCourse }]}>
-              <Select
-                options={courseOptions}
-                placeholder="Chọn khóa học"
-                showSearch
-                optionFilterProp="label"
-              />
+              <Select options={courses.map(c => ({ value: c.id, label: c.name }))} placeholder="Chọn khóa học" showSearch optionFilterProp="label" />
             </Form.Item>
-
-            {/* Select Mentor */}
-            <Form.Item label={T.mentor} name="mentorId" rules={[
-              { required: true, message: T.msgRequiredMentor },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  if (!value || value !== getFieldValue('discipleId')) return Promise.resolve();
-                  return Promise.reject(new Error(T.msgMentorDiscipleDiff));
-                },
-              }),
-            ]}>
-              <Select
-                options={mentorOptions}
-                placeholder={T.selectMentor}
-                showSearch
-                optionFilterProp="label"
-              />
+            <Form.Item label={T.mentor} name="mentorId" rules={[{ required: true, message: T.msgRequiredMentor }, ({ getFieldValue }) => ({ validator(_, value) { if (!value || value !== getFieldValue('discipleId')) return Promise.resolve(); return Promise.reject(new Error(T.msgMentorDiscipleDiff)); }, }),]}>
+              <Select options={users.filter(u => u.roles?.includes('MENTOR') || u.roles?.includes('ADMIN')).map(u => ({ value: u.id, label: u.fullName }))} placeholder={T.selectMentor} showSearch optionFilterProp="label" />
             </Form.Item>
-
-            {/* Select Disciple */}
-            <Form.Item label={T.disciple} name="discipleId" rules={[
-              { required: true, message: T.msgRequiredDisciple },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  if (!value || value !== getFieldValue('mentorId')) return Promise.resolve();
-                  return Promise.reject(new Error(T.msgMentorDiscipleDiff));
-                },
-              }),
-            ]}>
-              <Select
-                options={discipleOptions}
-                placeholder={T.selectDisciple}
-                showSearch
-                optionFilterProp="label"
-              />
+            <Form.Item label={T.disciple} name="discipleId" rules={[{ required: true, message: T.msgRequiredDisciple }, ({ getFieldValue }) => ({ validator(_, value) { if (!value || value !== getFieldValue('mentorId')) return Promise.resolve(); return Promise.reject(new Error(T.msgMentorDiscipleDiff)); }, }),]}>
+              <Select options={users.map(u => ({ value: u.id, label: u.fullName }))} placeholder={T.selectDisciple} showSearch optionFilterProp="label" />
             </Form.Item>
-
-            {/* Start Date */}
-            <Form.Item label={T.startDate} name="startDate" rules={[
-              { required: true, message: T.msgRequiredStartDate },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  const end = getFieldValue('endDate');
-                  if (!value || !end || value <= end) return Promise.resolve();
-                  return Promise.reject(new Error(T.msgStartBeforeEnd));
-                },
-              }),
-            ]}>
+            <Form.Item label={T.startDate} name="startDate" rules={[{ required: true, message: T.msgRequiredStartDate }, ({ getFieldValue }) => ({ validator(_, value) { const end = getFieldValue('endDate'); if (!value || !end || value <= end) return Promise.resolve(); return Promise.reject(new Error(T.msgStartBeforeEnd)); }, }),]}>
               <Input type="date" className="w-full" />
             </Form.Item>
-
-            {/* End Date */}
-            <Form.Item label={T.endDate} name="endDate" rules={[
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  const start = getFieldValue('startDate');
-                  if (!value || !start || start <= value) return Promise.resolve();
-                  return Promise.reject(new Error(T.msgEndAfterStart));
-                },
-              }),
-            ]}>
+            <Form.Item label={T.endDate} name="endDate" rules={[({ getFieldValue }) => ({ validator(_, value) { const start = getFieldValue('startDate'); if (!value || !start || start <= value) return Promise.resolve(); return Promise.reject(new Error(T.msgEndAfterStart)); }, }),]}>
               <Input type="date" className="w-full" />
             </Form.Item>
-
-            {/* Status */}
             <Form.Item label={T.status} name="status" initialValue="in_progress">
-              <Select
-                options={[
-                  { value: 'in_progress', label: T.in_progress },
-                  { value: 'completed', label: T.completed }
-                ]}
-              />
+              <Select options={[{ value: 'in_progress', label: T.in_progress }, { value: 'completed', label: T.completed }]} />
             </Form.Item>
-
-            {/* Notes */}
             <Form.Item label={T.notes} name="notes">
               <Input.TextArea rows={4} placeholder="Nhập ghi chú..." />
             </Form.Item>
           </Form>
         </div>
-
-        {/* Footer Actions */}
         <div className="flex justify-end gap-2 pt-4 border-t mt-2 shrink-0">
-          <Button onClick={() => { setPanelMode('view');
-            closeRightPanel(); }}>{T.cancelBtn}</Button>
+          <Button onClick={() => { setPanelMode('view'); closeRightPanel(); }}>{T.cancelBtn}</Button>
           <Button type="primary" loading={submitLoading} onClick={handleSubmit} style={{ background: "#F97316", borderColor: "#F97316" }}>
             {panelMode === 'create' ? T.addRelationBtn : T.saveBtn}
           </Button>
@@ -745,34 +859,26 @@ function DiagramContent() {
           </Space>
         </div>
         <div className="flex items-center gap-2">
-          <Select
-            value={selectedCourse}
-            onChange={setSelectedCourse}
-            style={{ width: 180 }}
-            placeholder={T.selectCourse}
-          >
+          <Select value={selectedCourse} onChange={setSelectedCourse} style={{ width: 180 }} placeholder={T.selectCourse}>
             {courses.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}
           </Select>
 
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            style={{ background: "#F97316", borderColor: "#F97316" }}
-            onClick={() => openCreatePanel()}
-          >
+          <Button type="primary" icon={<PlusOutlined />} style={{ background: "#F97316", borderColor: "#F97316" }} onClick={() => openCreatePanel()}>
             {T.createNode}
           </Button>
 
-          <Button
-            icon={sidebarsVisible ? <X size={14} /> : <MenuOutlined />}
-            onClick={() => setSidebarsVisible(!sidebarsVisible)}
-          />
-
-          <Button
-            type={focusMyself ? "primary" : "default"}
-            onClick={() => setFocusMyself(!focusMyself)}
-            icon={<EyeOutlined />}
+          {/* NÚT VIEW AS PLANT TREE MỚI */}
+          <Button 
+            type={viewMode === 'plantTree' ? 'primary' : 'default'}
+            icon={<TreePine size={16} />}
+            onClick={() => setViewMode(viewMode === 'plantTree' ? 'diagram' : 'plantTree')}
           >
+            {viewMode === 'plantTree' ? 'View Diagram' : 'View As Plant Tree'}
+          </Button>
+
+          <Button icon={sidebarsVisible ? <X size={14} /> : <MenuOutlined />} onClick={() => setSidebarsVisible(!sidebarsVisible)} />
+
+          <Button type={focusMyself ? "primary" : "default"} onClick={() => setFocusMyself(!focusMyself)} icon={<EyeOutlined />}>
             {T.myDiagram}
           </Button>
         </div>
@@ -846,7 +952,7 @@ function DiagramContent() {
   );
 }
 
-// Wrap với ReactFlowProvider để tránh lỗi useReactFlow (nếu có dùng hook nào khác)
+// Wrap với ReactFlowProvider
 export default function Diagram() {
   return (
     <ReactFlowProvider>
