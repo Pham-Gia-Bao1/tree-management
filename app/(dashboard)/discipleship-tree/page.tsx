@@ -42,7 +42,6 @@ import {
   Flower,
   Sparkles,
   TreePine,
-  Save,
 } from "lucide-react";
 
 import { EyeOutlined, PlusOutlined, MenuOutlined } from "@ant-design/icons";
