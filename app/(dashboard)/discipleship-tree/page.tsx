@@ -65,11 +65,19 @@ import { AncestorNodeRecord, MemberProfileRecord } from "@/types/member.types";
 const { Option } = Select;
 const { Title, Text } = Typography;
 
-// ==================== DỊCH TIẾNG VIỆT ====================
+// ==================== DỊCH TIẾNG VIỆT (ĐÃ BỔ SUNG ĐẦY ĐỦ) ====================
 const T = {
+    // Menu & Header
     selectCourse: "Chọn lớp/môn học",
     myDiagram: "Sơ đồ của tôi",
     dragZoom: "Kéo di chuyển · Zoom chuột · Click chọn node",
+    
+    // Sidebars
+    nodeLibrary: "Thư viện lãnh đạo",
+    searchMembers: "Tìm kiếm thành viên...",
+    createNode: "Thêm môn đồ mới",
+    
+    // Form Panel
     createRelation: "Tạo liên kết đào tạo",
     editRelation: "Chỉnh sửa liên kết",
     viewDetail: "Chi tiết thành viên",
@@ -86,21 +94,29 @@ const T = {
     notes: "Ghi chú",
     in_progress: "Đang đào tạo",
     completed: "Đã hoàn thành",
+    selectMentor: "Chọn người hướng dẫn",
+    selectDisciple: "Chọn môn đồ",
+    selectStatus: "Chọn trạng thái",
+    
+    // Right Panel Info
     info: "Tổng quan",
     properties: "Thuộc tính",
     runtime: "Chỉ số đào tạo",
     variables: "Hệ thống cấp bậc",
     send: "Gửi tin nhắn",
-    nodeLibrary: "Thư viện lãnh đạo",
-    searchMembers: "Tìm kiếm thành viên...",
-    createNode: "Thêm môn đồ mới",
-    selectMentor: "Chọn người hướng dẫn",
-    selectDisciple: "Chọn môn đồ",
-    selectStatus: "Chọn trạng thái",
+    
+    // Messages & Validations (Các key bị thiếu trước đây)
     msgCreateSuccess: "Tạo liên kết thành công!",
     msgUpdateSuccess: "Cập nhật liên kết thành công!",
     msgError: "Có lỗi xảy ra, vui lòng thử lại.",
-    msgEmpty: "Click vào một node để xem chi tiết"
+    msgEmpty: "Click vào một node để xem chi tiết",
+    msgRequiredCourse: "Vui lòng chọn khóa học.",
+    msgRequiredMentor: "Vui lòng chọn người hướng dẫn.",
+    msgRequiredDisciple: "Vui lòng chọn môn đồ.",
+    msgRequiredStartDate: "Vui lòng chọn ngày bắt đầu.",
+    msgMentorDiscipleDiff: "Người hướng dẫn và môn đồ phải là 2 người khác nhau.",
+    msgStartBeforeEnd: "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.",
+    msgEndAfterStart: "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.",
 };
 
 // ==================== TYPES ====================
@@ -231,7 +247,6 @@ function buildTreeForCourse(
         addedNodeIds.add(id);
     });
 
-    // FIX BUILD LỖI: Ép kiểu `as any` để chấp nhận thuộc tính `pathOptions`
     links.forEach(link => {
         const highlighted = subtreeIds && subtreeIds.has(link.mentorId) && subtreeIds.has(link.discipleId);
         const dimmed = subtreeIds && !highlighted;
@@ -247,7 +262,7 @@ function buildTreeForCourse(
             markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : edgeColor },
             style: { stroke: dimmed ? "#E2E8F0" : edgeColor, strokeWidth: highlighted ? 3 : 2, opacity: dimmed ? 0.4 : 1 },
             pathOptions: { borderRadius: 8 },
-        } as any); // <-- Thêm `as any` để TypeScript bỏ qua kiểm tra pathOptions
+        } as any);
     });
     
     rootIds.forEach(rid => {
@@ -262,7 +277,7 @@ function buildTreeForCourse(
             markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#10B981" },
             style: { stroke: dimmed ? "#E2E8F0" : "#10B981", strokeWidth: 2, opacity: dimmed ? 0.4 : 1 },
             pathOptions: { borderRadius: 8 },
-        } as any); // <-- Thêm `as any` ở đây
+        } as any);
     });
     return { nodes, edges };
 }
