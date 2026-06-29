@@ -65,19 +65,14 @@ import { AncestorNodeRecord, MemberProfileRecord } from "@/types/member.types";
 const { Option } = Select;
 const { Title, Text } = Typography;
 
-// ==================== DỊCH TIẾNG VIỆT (ĐÃ BỔ SUNG ĐẦY ĐỦ) ====================
+// ==================== DỊCH TIẾNG VIỆT ====================
 const T = {
-    // Menu & Header
     selectCourse: "Chọn lớp/môn học",
     myDiagram: "Sơ đồ của tôi",
     dragZoom: "Kéo di chuyển · Zoom chuột · Click chọn node",
-    
-    // Sidebars
     nodeLibrary: "Thư viện lãnh đạo",
     searchMembers: "Tìm kiếm thành viên...",
     createNode: "Thêm môn đồ mới",
-    
-    // Form Panel
     createRelation: "Tạo liên kết đào tạo",
     editRelation: "Chỉnh sửa liên kết",
     viewDetail: "Chi tiết thành viên",
@@ -97,15 +92,11 @@ const T = {
     selectMentor: "Chọn người hướng dẫn",
     selectDisciple: "Chọn môn đồ",
     selectStatus: "Chọn trạng thái",
-    
-    // Right Panel Info
     info: "Tổng quan",
     properties: "Thuộc tính",
     runtime: "Chỉ số đào tạo",
     variables: "Hệ thống cấp bậc",
     send: "Gửi tin nhắn",
-    
-    // Messages & Validations (Các key bị thiếu trước đây)
     msgCreateSuccess: "Tạo liên kết thành công!",
     msgUpdateSuccess: "Cập nhật liên kết thành công!",
     msgError: "Có lỗi xảy ra, vui lòng thử lại.",
@@ -131,6 +122,8 @@ type Link = {
     notes?: string;
 };
 type Course = { id: string; name: string };
+// Đồng bộ type UserRecord giống Training Relations
+type UserRecord = { id: string; fullName: string; roles?: string[] };
 type MentorStat = { courseId: string; courseName: string; totalDisciples: number };
 type DescendantNode = { member: MemberProfileRecord; level: number; link: { id: string; startDate?: string; endDate?: string | null } };
 type MemberDetailResponse = { member: MemberProfileRecord; mentorStats: MentorStat[]; descendants: DescendantNode[]; ancestors: AncestorNodeRecord[] };
@@ -138,9 +131,9 @@ type PanelMode = 'view' | 'create' | 'edit';
 
 // ==================== HELPER & LAYOUT ALGORITHM ====================
 const getColorForLevel = (level: number) => {
-    if (level === 0) return "#10B981"; // Đấng tối cao - Start
-    if (level === 1) return "#F97316"; // Người hướng dẫn - Logic
-    return "#3B82F6";                 // Môn đồ - Transform
+    if (level === 0) return "#10B981";
+    if (level === 1) return "#F97316";
+    return "#3B82F6";
 };
 
 function getSubtreeIds(links: Link[], rootId: string): Set<string> {
@@ -162,7 +155,6 @@ function calculateLayoutTree(rootIds: string[], links: Link[], levelMap: Record<
     const posMap: Record<string, { x: number; y: number }> = {};
     const NODE_W = 280, NODE_H = 80, GAP_X = 300, GAP_Y = 20;
     const subtreeSize: Record<string, number> = {};
-    
     const dfsCount = (id: string) => {
         const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
         if (children.length === 0) { subtreeSize[id] = 1; return 1; }
@@ -264,7 +256,6 @@ function buildTreeForCourse(
             pathOptions: { borderRadius: 8 },
         } as any);
     });
-    
     rootIds.forEach(rid => {
         const highlighted = !subtreeIds || (subtreeIds && subtreeIds.has(rid) && rootInSubtree);
         const dimmed = subtreeIds && !highlighted;
@@ -318,19 +309,22 @@ const nodeTypes = { rootNode: RootNode, mentorNode: MentorNode, discipleNode: Di
 export default function Diagram() {
     const { message } = App.useApp();
     const [panelForm] = Form.useForm();
+
+    // States
     const [courses, setCourses] = useState<Course[]>([]);
+    const [users, setUsers] = useState<UserRecord[]>([]); // Sử dụng Users thay vì AllMembers để có roles
     const [selectedCourse, setSelectedCourse] = useState("");
     const [focusMyself, setFocusMyself] = useState(false);
     const [currentUserId] = useState<string>("");
 
-    // Nodes & Edges
+    // Tree
     const [treeLinks, setTreeLinks] = useState<Link[]>([]);
     const [memberMap, setMemberMap] = useState<Map<string, MemberProfileRecord>>(new Map());
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [loading, setLoading] = useState(false);
 
-    // Right Sidebar States
+    // Right Panel
     const [rightPanelOpen, setRightPanelOpen] = useState(false);
     const [panelMode, setPanelMode] = useState<PanelMode>('view');
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
@@ -339,18 +333,25 @@ export default function Diagram() {
     const [detailLoading, setDetailLoading] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [messageInput, setMessageInput] = useState("");
+    const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
-    // Other Data
-    const [allMembers, setAllMembers] = useState<MemberProfileRecord[]>([]);
-
-    // ── LOAD DATA ──
+    // ==================== LOAD DATA (Đồng bộ với Training Relations) ====================
     useEffect(() => {
-        fetch("/api/courses").then(r => r.json()).then(res => {
-            if (res.success) { setCourses(res.data || []); if (res.data?.length) setSelectedCourse(res.data[0].id); }
-        }).catch(() => message.error("Lỗi tải khóa học"));
-        fetch("/api/members").then(r => r.json()).then(res => {
-            if (res.success) setAllMembers(res.data || []);
-        }).catch(() => {});
+        Promise.all([
+            fetch('/api/courses').then(r => r.json()),
+            fetch('/api/users').then(r => r.json())
+        ])
+        .then(([courseRes, userRes]) => {
+            if (courseRes.success) { 
+                setCourses(courseRes.data || []);
+                if (courseRes.data?.length && !selectedCourse) setSelectedCourse(courseRes.data[0].id);
+            }
+            if (userRes.success) {
+                // Lưu danh sách users (bao gồm roles) để dùng cho dropdown
+                setUsers(userRes.data || []);
+            }
+        })
+        .catch(() => message.error("Lỗi tải dữ liệu khởi tạo"));
     }, [message]);
 
     const fetchMemberDetail = useCallback(async (memberId: string) => {
@@ -363,7 +364,25 @@ export default function Diagram() {
         } catch { message.error("Lỗi kết nối"); } finally { setDetailLoading(false); }
     }, [selectedCourse, message]);
 
-    // ── TREE LOGIC ──
+    // ==================== OPTIONS CHO FORM (UseMemo) ====================
+    const mentorOptions = useMemo(
+        () => users
+            .filter((u) => u.roles?.includes('MENTOR') || u.roles?.includes('ADMIN'))
+            .map((u) => ({ value: u.id, label: u.fullName })),
+        [users]
+    );
+
+    const discipleOptions = useMemo(
+        () => users.map((u) => ({ value: u.id, label: u.fullName })),
+        [users]
+    );
+
+    const courseOptions = useMemo(
+        () => courses.map((c) => ({ value: c.id, label: c.name })),
+        [courses]
+    );
+
+    // ==================== TREE LOGIC ====================
     const onEyeClick = useCallback((memberId: string) => {
         if (!memberId) return;
         setPanelMode('view');
@@ -377,8 +396,6 @@ export default function Diagram() {
         const member = (node.data as any)?.member as MemberProfileRecord | undefined;
         if (member) onEyeClick(member.id);
     }, [onEyeClick]);
-
-    const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
     useEffect(() => {
         if (!treeLinks.length) return;
@@ -404,12 +421,12 @@ export default function Diagram() {
         loadTree();
     }, [selectedCourse, focusMyself, currentUserId, message]);
 
-    // ── API HANDLERS ──
+    // ==================== API HANDLERS (CREATE / EDIT) ====================
     const handleCreateRelation = async () => {
         const values = await panelForm.validateFields();
         setSubmitLoading(true);
         try {
-            const res = await fetch('/api/discipleship-links', {
+            const res = await fetch('/api/discipleship-links', { // Endpoint của Disciple Tree
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -489,6 +506,7 @@ export default function Diagram() {
         } catch { message.error("Lỗi gửi tin nhắn"); }
     };
 
+    // ==================== PANEL HANDLERS ====================
     const openCreatePanel = useCallback(() => {
         setPanelMode('create');
         setEditingLinkId(null);
@@ -496,35 +514,25 @@ export default function Diagram() {
         setSelectedMemberDetail(null);
         setViewingMemberId(null);
         panelForm.resetFields();
-        panelForm.setFieldsValue({ status: 'in_progress', courseId: selectedCourse });
-    }, [panelForm, selectedCourse]);
-
-    const openEditPanel = useCallback((linkId: string, existingData: Link) => {
-        setPanelMode('edit');
-        setEditingLinkId(linkId);
-        setRightPanelOpen(true);
-        setSelectedMemberDetail(null);
-        panelForm.setFieldsValue({
-            courseId: existingData.courseId,
-            mentorId: existingData.mentorId,
-            discipleId: existingData.discipleId,
-            startDate: existingData.startDate,
-            endDate: existingData.endDate ?? '',
-            status: existingData.status ?? 'in_progress',
-            notes: existingData.notes ?? '',
+        // Set mặc định status và course ID
+        panelForm.setFieldsValue({ 
+            status: 'in_progress', 
+            courseId: selectedCourse 
         });
-    }, [panelForm]);
+    }, [panelForm, selectedCourse]);
 
     const closeRightPanel = useCallback(() => {
         setRightPanelOpen(false);
         setSelectedMemberDetail(null);
         setViewingMemberId(null);
+        setPanelMode('view');
     }, []);
 
-    // ── RENDER RIGHT PANEL ──
+    // ==================== RENDER RIGHT PANEL ====================
     const renderRightPanel = () => {
         if (!rightPanelOpen) return null;
 
+        // 1. PANEL VIEW CHI TIẾT
         if (panelMode === 'view') {
             if (detailLoading) return <Flex vertical gap={16} className="p-4"><Skeleton active paragraph={{ rows: 6 }} /></Flex>;
             if (!selectedMemberDetail) return <div className="flex h-full items-center justify-center text-slate-400"><Empty description={T.msgEmpty} /></div>;
@@ -566,14 +574,23 @@ export default function Diagram() {
             );
         }
 
+        // 2. PANEL CREATE / EDIT FORM (GIỐNG HỆT TrainingRelationsPage)
         return (
             <Flex vertical className="h-full overflow-hidden p-4 bg-white">
                 <div className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">{panelMode === 'create' ? T.createRelation : T.editRelation}</div>
                 <div className="flex-1 overflow-y-auto pr-1">
                     <Form form={panelForm} layout="vertical" requiredMark="optional">
+                        {/* Select Course */}
                         <Form.Item label={T.course} name="courseId" rules={[{ required: true, message: T.msgRequiredCourse }]}>
-                            <Select options={courses.map(c => ({ value: c.id, label: c.name }))} placeholder="Chọn khóa học" showSearch optionFilterProp="label" />
+                            <Select 
+                                options={courseOptions} 
+                                placeholder="Chọn khóa học" 
+                                showSearch 
+                                optionFilterProp="label" 
+                            />
                         </Form.Item>
+                        
+                        {/* Select Mentor */}
                         <Form.Item label={T.mentor} name="mentorId" rules={[
                             { required: true, message: T.msgRequiredMentor },
                             ({ getFieldValue }) => ({
@@ -583,8 +600,15 @@ export default function Diagram() {
                                 },
                             }),
                         ]}>
-                            <Select options={allMembers.filter(u => u.roles?.includes('MENTOR') || u.roles?.includes('ADMIN')).map(u => ({ value: u.id, label: u.fullName }))} placeholder={T.selectMentor} showSearch optionFilterProp="label" />
+                            <Select 
+                                options={mentorOptions} 
+                                placeholder={T.selectMentor} 
+                                showSearch 
+                                optionFilterProp="label" 
+                            />
                         </Form.Item>
+                        
+                        {/* Select Disciple */}
                         <Form.Item label={T.disciple} name="discipleId" rules={[
                             { required: true, message: T.msgRequiredDisciple },
                             ({ getFieldValue }) => ({
@@ -594,8 +618,15 @@ export default function Diagram() {
                                 },
                             }),
                         ]}>
-                            <Select options={allMembers.map(u => ({ value: u.id, label: u.fullName }))} placeholder={T.selectDisciple} showSearch optionFilterProp="label" />
+                            <Select 
+                                options={discipleOptions} 
+                                placeholder={T.selectDisciple} 
+                                showSearch 
+                                optionFilterProp="label" 
+                            />
                         </Form.Item>
+                        
+                        {/* Start Date */}
                         <Form.Item label={T.startDate} name="startDate" rules={[
                             { required: true, message: T.msgRequiredStartDate },
                             ({ getFieldValue }) => ({
@@ -608,6 +639,8 @@ export default function Diagram() {
                         ]}>
                             <Input type="date" className="w-full" />
                         </Form.Item>
+                        
+                        {/* End Date */}
                         <Form.Item label={T.endDate} name="endDate" rules={[
                             ({ getFieldValue }) => ({
                                 validator(_, value) {
@@ -619,14 +652,25 @@ export default function Diagram() {
                         ]}>
                             <Input type="date" className="w-full" />
                         </Form.Item>
+                        
+                        {/* Status */}
                         <Form.Item label={T.status} name="status" initialValue="in_progress">
-                            <Select options={[{ value: 'in_progress', label: T.in_progress }, { value: 'completed', label: T.completed }]} />
+                            <Select 
+                                options={[
+                                    { value: 'in_progress', label: T.in_progress }, 
+                                    { value: 'completed', label: T.completed }
+                                ]} 
+                            />
                         </Form.Item>
+                        
+                        {/* Notes */}
                         <Form.Item label={T.notes} name="notes">
                             <Input.TextArea rows={4} placeholder="Nhập ghi chú..." />
                         </Form.Item>
                     </Form>
                 </div>
+                
+                {/* Footer Actions */}
                 <div className="flex justify-end gap-2 pt-4 border-t mt-2 shrink-0">
                     <Button onClick={() => { setPanelMode('view'); closeRightPanel(); }}>{T.cancelBtn}</Button>
                     <Button type="primary" loading={submitLoading} onClick={handleSubmit} style={{ background: "#F97316", borderColor: "#F97316" }}>
@@ -637,7 +681,7 @@ export default function Diagram() {
         );
     };
 
-    // ── UI LAYOUT 3 CỘT ──
+    // ==================== UI LAYOUT 3 CỘT (KHÔNG ĐỔI) ====================
     return (
         <div className="h-screen w-full flex flex-col bg-[#f8fafc] font-sans overflow-hidden">
             <div className="flex justify-between items-center px-4 py-3 bg-white border-b border-gray-200 z-10">
@@ -651,7 +695,14 @@ export default function Diagram() {
                 {/* LEFT SIDEBAR */}
                 <div className="w-[320px] min-w-[320px] bg-white border-r border-gray-200 flex flex-col h-full">
                     <div className="p-4 border-b border-gray-100">
-                        <Select value={selectedCourse} onChange={setSelectedCourse} style={{ width: "100%", marginBottom: 12 }} placeholder={T.selectCourse}>{courses.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}</Select>
+                        <Select 
+                            value={selectedCourse} 
+                            onChange={setSelectedCourse} 
+                            style={{ width: "100%", marginBottom: 12 }} 
+                            placeholder={T.selectCourse}
+                        >
+                            {courses.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}
+                        </Select>
                         <Input prefix={<Search size={14} className="text-slate-400"/>} placeholder={T.searchMembers} className="mb-3" />
                         <Button block style={{ background: "#F97316", borderColor: "#F97316", color: "white", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={openCreatePanel}><PlusOutlined /> {T.createNode}</Button>
                     </div>
