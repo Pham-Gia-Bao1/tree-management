@@ -57,7 +57,7 @@ import {
   Node,
   Edge,
   Connection,
-  useReactFlow,
+  ReactFlowProvider,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -320,7 +320,7 @@ const DiscipleNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}>
 const nodeTypes = { rootNode: RootNode, mentorNode: MentorNode, discipleNode: DiscipleNode };
 
 // ==================== MAIN COMPONENT ====================
-export default function Diagram() {
+function DiagramContent() {
   const { message } = App.useApp();
   const [panelForm] = Form.useForm();
 
@@ -535,7 +535,6 @@ export default function Diagram() {
   };
 
   // ==================== PANEL HANDLERS ====================
-  // Mở panel tạo mới, nhận mentorId tùy chọn để tự động điền
   const openCreatePanel = useCallback((mentorId?: string) => {
     setSidebarsVisible(true);
     setPanelMode('create');
@@ -560,13 +559,11 @@ export default function Diagram() {
   }, []);
 
   // ==================== REACT FLOW CONNECT HANDLERS ====================
-  const { getNode } = useReactFlow();
-
+  // Sử dụng nodes state để tìm node khi bắt đầu kéo
   const onConnectStart = useCallback((event: any, params: any) => {
-    // Chỉ xử lý khi kéo từ Handle nguồn (source)
     if (params.handleType === 'source') {
-      const node = getNode(params.nodeId);
-      // Bỏ qua node gốc (root)
+      // Tìm node trong danh sách nodes hiện tại
+      const node = nodes.find(n => n.id === params.nodeId);
       if (node && node.id !== 'root') {
         const member = node.data?.member as MemberProfileRecord | undefined;
         if (member) {
@@ -574,7 +571,7 @@ export default function Diagram() {
         }
       }
     }
-  }, [getNode, openCreatePanel]);
+  }, [nodes, openCreatePanel]);
 
   const onConnect = useCallback((connection: Connection) => {
     // Khi kéo thả thành công vào một target, tự động điền disciple
@@ -846,5 +843,14 @@ export default function Diagram() {
         )}
       </div>
     </div>
+  );
+}
+
+// Wrap với ReactFlowProvider để tránh lỗi useReactFlow (nếu có dùng hook nào khác)
+export default function Diagram() {
+  return (
+    <ReactFlowProvider>
+      <DiagramContent />
+    </ReactFlowProvider>
   );
 }
