@@ -38,10 +38,6 @@ import {
   PlayCircle,
   Database,
   User,
-  Leaf,
-  Flower,
-  Sparkles,
-  TreePine,
 } from "lucide-react";
 
 import { EyeOutlined, PlusOutlined, MenuOutlined } from "@ant-design/icons";
@@ -131,61 +127,7 @@ type DescendantNode = { member: MemberProfileRecord; level: number; link: { id: 
 type MemberDetailResponse = { member: MemberProfileRecord; mentorStats: MentorStat[]; descendants: DescendantNode[]; ancestors: AncestorNodeRecord[] };
 type PanelMode = 'view' | 'create' | 'edit';
 
-// ==================== LAYOUT ALGORITHM (DỌC – GIỐNG CÂY) ====================
-function calculateTreeLayout(
-  rootIds: string[],
-  links: Link[],
-  levelMap: Record<string, number>
-): Record<string, { x: number; y: number }> {
-  const posMap: Record<string, { x: number; y: number }> = {};
-  const NODE_W = 280;
-  const NODE_H = 80;
-  const GAP_Y = 120; // Khoảng cách dọc giữa các cấp
-  const GAP_X = 40;  // Khoảng cách ngang giữa các node cùng cấp
-
-  // Tính kích thước subtree (số lượng node con)
-  const subtreeSize: Record<string, number> = {};
-  const dfsCount = (id: string): number => {
-    const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
-    if (children.length === 0) {
-      subtreeSize[id] = 1;
-      return 1;
-    }
-    let total = 0;
-    children.forEach(child => total += dfsCount(child));
-    subtreeSize[id] = total;
-    return total;
-  };
-  rootIds.forEach(root => dfsCount(root));
-
-  // Hàm đệ quy gán vị trí (x, y)
-  const assignPos = (id: string, x: number, y: number) => {
-    posMap[id] = { x, y };
-    const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
-    if (children.length === 0) return;
-
-    // Phân bố các con đều nhau theo chiều ngang trong khoảng chiều rộng của subtree
-    const childCount = children.length;
-    const totalWidth = (childCount - 1) * (NODE_W + GAP_X);
-    const startX = x - totalWidth / 2;
-    children.forEach((child, index) => {
-      const childX = startX + index * (NODE_W + GAP_X);
-      assignPos(child, childX, y + GAP_Y);
-    });
-  };
-
-  // Xác định vị trí các root: phân bố đều theo chiều ngang
-  const totalRoots = rootIds.length;
-  const totalWidth = (totalRoots - 1) * (NODE_W + GAP_X);
-  rootIds.forEach((root, index) => {
-    const x = -totalWidth / 2 + index * (NODE_W + GAP_X);
-    assignPos(root, x, 0);
-  });
-
-  return posMap;
-}
-
-// ==================== HELPER ====================
+// ==================== HELPER & LAYOUT ALGORITHM ====================
 const getColorForLevel = (level: number) => {
   if (level === 0) return "#10B981";
   if (level === 1) return "#F97316";
@@ -205,6 +147,35 @@ function getSubtreeIds(links: Link[], rootId: string): Set<string> {
     });
   }
   return set;
+}
+
+function calculateLayoutTree(rootIds: string[], links: Link[], levelMap: Record<string, number>) {
+  const posMap: Record<string, { x: number; y: number }> = {};
+  const NODE_W = 280,
+    NODE_H = 80,
+    GAP_X = 300,
+    GAP_Y = 20;
+  const subtreeSize: Record<string, number> = {};
+  const dfsCount = (id: string) => {
+    const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
+    if (children.length === 0) { subtreeSize[id] = 1; return 1; }
+    let total = 0;
+    children.forEach(child => total += dfsCount(child));
+    subtreeSize[id] = total;
+    return total;
+  };
+  rootIds.forEach(root => dfsCount(root));
+
+  let yBase = 0;
+  const assignY = (id: string, startY: number) => {
+    const level = levelMap[id] || 0;
+    posMap[id] = { x: level * GAP_X + 150, y: startY * (NODE_H + GAP_Y) };
+    let yOffset = startY;
+    const children = links.filter(l => l.mentorId === id).map(l => l.discipleId);
+    children.forEach(child => { assignY(child, yOffset); yOffset += subtreeSize[child]; });
+  };
+  rootIds.forEach(root => { assignY(root, yBase); yBase += subtreeSize[root]; });
+  return posMap;
 }
 
 function buildTreeForCourse(
@@ -235,26 +206,20 @@ function buildTreeForCourse(
     });
   }
 
-  // Sử dụng layout dọc
-  const posMap = calculateTreeLayout(rootIds, links, levelMap);
-
+  const posMap = calculateLayoutTree(rootIds, links, levelMap);
   const subtreeIds = focusMemberId ? getSubtreeIds(links, focusMemberId) : null;
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
+  const nodes: Node[] = [],
+    edges: Edge[] = [];
   const addedNodeIds = new Set<string>();
   const mentorSet = new Set(allMentorIds);
   const allMemberIds = new Set([...allMentorIds, ...allDiscipleIds]);
   const rootInSubtree = !subtreeIds || (focusMemberId ? rootIds.includes(focusMemberId) : false);
 
-  // Node gốc (Đấng Tối Cao) – đặt ở trên cùng, x=0
   nodes.push({
     id: "root",
     type: "rootNode",
-    position: { x: 0, y: -80 },
-    data: {
-      courseName: "Đấng Tối Cao",
-      isDimmed: subtreeIds ? !rootInSubtree : false,
-    },
+    position: { x: -100, y: 0 },
+    data: { courseName: "Đấng Tối Cao (Khởi Đầu)", isDimmed: subtreeIds ? !rootInSubtree : false },
   });
   addedNodeIds.add("root");
 
@@ -266,31 +231,16 @@ function buildTreeForCourse(
     const isDimmed = subtreeIds ? !isInSubtree : false;
     const level = levelMap[id] || 0;
     const isMentor = mentorSet.has(id);
-    const data = {
-      member,
-      level,
-      isFocus,
-      isInSubtree,
-      isDimmed,
-      onEyeClick,
-      discipleCount: discipleCount[id] || 0,
-      isMentor,
-    };
-    const node = {
-      id,
-      position: posMap[id] || { x: 0, y: 0 },
-      data,
-    };
-    if (isMentor) {
-      nodes.push({ ...node, type: "mentorNode" });
-    } else {
+    const data = { member, level, isFocus, isInSubtree, isDimmed, onEyeClick, discipleCount: discipleCount[id] || 0, isMentor };
+    const node = { id, position: posMap[id] || { x: 0, y: 0 }, data };
+    if (isMentor) nodes.push({ ...node, type: "mentorNode" });
+    else {
       const link = links.find(l => l.discipleId === id);
       nodes.push({ ...node, type: "discipleNode", data: { ...data, link } });
     }
     addedNodeIds.add(id);
   });
 
-  // Edges
   links.forEach(link => {
     const highlighted = subtreeIds && subtreeIds.has(link.mentorId) && subtreeIds.has(link.discipleId);
     const dimmed = subtreeIds && !highlighted;
@@ -303,20 +253,11 @@ function buildTreeForCourse(
       type: "smoothstep",
       animated: !dimmed,
       zIndex: highlighted ? 10 : 0,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: dimmed ? "#E2E8F0" : edgeColor,
-      },
-      style: {
-        stroke: dimmed ? "#E2E8F0" : edgeColor,
-        strokeWidth: highlighted ? 3 : 2,
-        opacity: dimmed ? 0.4 : 1,
-      },
+      markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : edgeColor },
+      style: { stroke: dimmed ? "#E2E8F0" : edgeColor, strokeWidth: highlighted ? 3 : 2, opacity: dimmed ? 0.4 : 1 },
       pathOptions: { borderRadius: 8 },
     } as any);
   });
-
-  // Kết nối root → các root thật
   rootIds.forEach(rid => {
     const highlighted = !subtreeIds || (subtreeIds && subtreeIds.has(rid) && rootInSubtree);
     const dimmed = subtreeIds && !highlighted;
@@ -326,244 +267,55 @@ function buildTreeForCourse(
       target: rid,
       type: "smoothstep",
       zIndex: highlighted ? 10 : 0,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: dimmed ? "#E2E8F0" : "#10B981",
-      },
-      style: {
-        stroke: dimmed ? "#E2E8F0" : "#10B981",
-        strokeWidth: 2,
-        opacity: dimmed ? 0.4 : 1,
-      },
+      markerEnd: { type: MarkerType.ArrowClosed, color: dimmed ? "#E2E8F0" : "#10B981" },
+      style: { stroke: dimmed ? "#E2E8F0" : "#10B981", strokeWidth: 2, opacity: dimmed ? 0.4 : 1 },
       pathOptions: { borderRadius: 8 },
     } as any);
   });
-
   return { nodes, edges };
 }
 
-// ==================== CUSTOM NODES VỚI HOA LÁ & ANIMATION ====================
-const WorkflowNodeBase = ({
-  data,
-  children,
-  leafIcon = null,
-}: {
-  data: any;
-  children: React.ReactNode;
-  leafIcon?: React.ReactNode;
-}) => {
+// ==================== CUSTOM NODES ====================
+const WorkflowNodeBase = ({ data, children }: { data: any, children: React.ReactNode }) => {
   const { member, level, isDimmed, isFocus, isMentor, onEyeClick, discipleCount } = data;
   const color = getColorForLevel(level);
   const isRoot = level === 0;
-
   return (
-    <div
-      className="fade-in-node"
-      style={{
-        width: isRoot ? 200 : 280,
-        background: isFocus
-          ? "linear-gradient(135deg, #f0fdf4, #dcfce7)"
-          : "linear-gradient(135deg, #ffffff, #fafafa)",
-        border: isFocus ? `2px solid ${color}` : "1px solid #d1d5db",
-        borderRadius: 20,
-        padding: 14,
-        boxShadow: isFocus
-          ? "0 8px 25px rgba(16, 185, 129, 0.2)"
-          : "0 4px 12px rgba(0,0,0,0.06)",
-        opacity: isDimmed ? 0.4 : 1,
-        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-        position: "relative",
-        backdropFilter: "blur(4px)",
-        cursor: "pointer",
-        transform: isFocus ? "scale(1.02)" : "scale(1)",
-      }}
-    >
-      {/* Hoa lá trang trí */}
-      {leafIcon && (
-        <div
-          style={{
-            position: "absolute",
-            top: -12,
-            right: -12,
-            fontSize: 28,
-            opacity: 0.9,
-            animation: "sway 4s ease-in-out infinite",
-          }}
-        >
-          {leafIcon}
-        </div>
-      )}
-      {!isRoot && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: -10,
-            left: -10,
-            fontSize: 20,
-            opacity: 0.7,
-            animation: "sway 5s ease-in-out infinite reverse",
-          }}
-        >
-          <Leaf size={20} color="#4CAF50" />
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          borderBottom: "1px solid #f1f5f9",
-          paddingBottom: 6,
-          marginBottom: 8,
-        }}
-      >
-        <div
-          style={{
-            fontWeight: 600,
-            fontSize: 13,
-            color: "#1e293b",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          {isRoot ? <TreePine size={16} /> : <User size={14} />}
-          {isRoot ? "Đấng Tối Cao" : member?.fullName || "Người vô danh"}
+    <div style={{
+      width: isRoot ? 200 : 280,
+      background: isFocus ? "#F9FAFB" : "#ffffff",
+      border: isFocus ? `2px solid ${color}` : `1px solid #E5E7EB`,
+      borderRadius: 12,
+      padding: 12,
+      boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+      opacity: isDimmed ? 0.4 : 1,
+      transition: "all 0.2s",
+      position: "relative",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F3F4F6", paddingBottom: 6, marginBottom: 8 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: "#111827", display: "flex", alignItems: "center", gap: 6 }}>
+          {isRoot ? <BookOpen size={14} /> : <User size={14} />}
+          {isRoot ? "Đấng Tối Cao" : (member?.fullName || "Người vô danh")}
         </div>
         <div>
-          {isRoot && (
-            <Tag color="success" style={{ fontSize: 10, borderRadius: 12 }}>
-              Khởi nguồn
-            </Tag>
-          )}
-          {!isRoot && isMentor && (
-            <Tag color="warning" style={{ fontSize: 10, borderRadius: 12 }}>
-              <GraduationCap size={12} /> Người HD
-            </Tag>
-          )}
-          {!isRoot && !isMentor && (
-            <Tag color="processing" style={{ fontSize: 10, borderRadius: 12 }}>
-              <Users size={12} /> Môn đồ
-            </Tag>
-          )}
+          {isRoot && <Tag color="success" style={{ fontSize: 10 }}>Khởi nguồn</Tag>}
+          {!isRoot && isMentor && <Tag color="warning" style={{ fontSize: 10 }}>Người HD</Tag>}
+          {!isRoot && !isMentor && <Tag color="processing" style={{ fontSize: 10 }}>Môn đồ</Tag>}
         </div>
       </div>
-
-      <div
-        style={{
-          fontSize: 12,
-          color: "#475569",
-          display: "flex",
-          flexDirection: "column",
-          gap: 4,
-        }}
-      >
-        {children}
+      <div style={{ fontSize: 11, color: "#6B7280", display: "flex", flexDirection: "column", gap: 2 }}>{children}</div>
+      <div style={{ position: "absolute", top: 8, right: 8, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onEyeClick(member?.id); }}>
+        <EyeOutlined style={{ color: "#9CA3AF", fontSize: 14 }} />
       </div>
-
-      {/* Nút xem chi tiết */}
-      <div
-        style={{
-          position: "absolute",
-          top: 8,
-          right: 8,
-          cursor: "pointer",
-          background: "#f1f5f9",
-          borderRadius: "50%",
-          width: 28,
-          height: 28,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "background 0.2s",
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (member?.id) onEyeClick(member.id);
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "#e2e8f0")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "#f1f5f9")}
-      >
-        <EyeOutlined style={{ color: "#64748b", fontSize: 14 }} />
-      </div>
-
-      {/* Handles cho layout dọc: target ở trên, source ở dưới */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{
-          background: color,
-          width: 12,
-          height: 12,
-          border: "2px solid white",
-          boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
-          borderRadius: "50%",
-        }}
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={{
-          background: color,
-          width: 12,
-          height: 12,
-          border: "2px solid white",
-          boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
-          borderRadius: "50%",
-        }}
-      />
+      <Handle type="target" position={Position.Left} style={{ background: color, width: 10, height: 10, border: "2px solid white", boxShadow: "0 0 0 1px #E2E8F0" }} />
+      <Handle type="source" position={Position.Right} style={{ background: color, width: 10, height: 10, border: "2px solid white", boxShadow: "0 0 0 1px #E2E8F0" }} />
     </div>
   );
 };
-
-const RootNode = ({ data }: { data: any }) => (
-  <WorkflowNodeBase data={data} leafIcon={<Sparkles size={24} color="#fbbf24" />}>
-    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-      <TreePine size={14} /> Sự khởi đầu của hệ thống
-    </div>
-  </WorkflowNodeBase>
-);
-
-const MentorNode = ({ data }: { data: any }) => (
-  <WorkflowNodeBase data={data} leafIcon={<Flower size={24} color="#f472b6" />}>
-    <div>
-      <Tag color="geekblue" style={{ borderRadius: 12 }}>
-        <GraduationCap size={12} /> Dẫn dắt
-      </Tag>{" "}
-      <span style={{ color: "#1e293b" }}>
-        {data.member?.branchName || ""}
-      </span>
-    </div>
-    <div>
-      <Users size={14} /> Môn đồ:{" "}
-      <span style={{ fontWeight: 600 }}>{data.discipleCount || 0}</span>
-    </div>
-  </WorkflowNodeBase>
-);
-
-const DiscipleNode = ({ data }: { data: any }) => (
-  <WorkflowNodeBase data={data} leafIcon={<Leaf size={24} color="#34d399" />}>
-    <div>
-      <Tag color="green" style={{ borderRadius: 12 }}>
-        <Users size={12} /> Học viên
-      </Tag>{" "}
-      <span style={{ color: "#1e293b" }}>
-        {data.member?.branchName || ""}
-      </span>
-    </div>
-    <div>
-      <Calendar size={14} /> Gia nhập:{" "}
-      {data.link?.startDate || "Chưa có"}
-    </div>
-  </WorkflowNodeBase>
-);
-
-const nodeTypes = {
-  rootNode: RootNode,
-  mentorNode: MentorNode,
-  discipleNode: DiscipleNode,
-};
+const RootNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div>Sự khởi đầu của hệ thống môn đồ.</div></WorkflowNodeBase>;
+const MentorNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="geekblue">Người dẫn dắt</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Môn đồ dưới quyền: {data.discipleCount || 0}</div></WorkflowNodeBase>;
+const DiscipleNode = ({ data }: { data: any }) => <WorkflowNodeBase data={data}><div><Tag color="green">Học viên</Tag> <span style={{ color: "#111827" }}>{data.member?.branchName || ""}</span></div><div>Gia nhập từ: {data.link?.startDate || "Chưa có"}</div></WorkflowNodeBase>;
+const nodeTypes = { rootNode: RootNode, mentorNode: MentorNode, discipleNode: DiscipleNode };
 
 // ==================== MAIN COMPONENT ====================
 export default function Diagram() {
@@ -584,7 +336,7 @@ export default function Diagram() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading] = useState(false);
 
-  // Sidebars
+  // Sidebars visibility
   const [sidebarsVisible, setSidebarsVisible] = useState(false);
 
   // Right Panel
@@ -627,7 +379,7 @@ export default function Diagram() {
     } catch { message.error("Lỗi kết nối"); } finally { setDetailLoading(false); }
   }, [selectedCourse, message]);
 
-  // ==================== OPTIONS ====================
+  // ==================== OPTIONS CHO FORM ====================
   const mentorOptions = useMemo(
     () => users
       .filter((u) => u.roles?.includes('MENTOR') || u.roles?.includes('ADMIN'))
@@ -657,6 +409,7 @@ export default function Diagram() {
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.id === "root") {
       setFocusedNodeId(null);
+      // Có thể giữ nguyên hoặc đóng sidebars tùy ý
       return;
     }
     setFocusedNodeId(prev => (prev === node.id ? null : node.id));
@@ -669,12 +422,7 @@ export default function Diagram() {
 
   useEffect(() => {
     if (!treeLinks.length) return;
-    const { nodes: n, edges: e } = buildTreeForCourse(
-      treeLinks,
-      memberMap,
-      focusedNodeId ?? undefined,
-      onEyeClick
-    );
+    const { nodes: n, edges: e } = buildTreeForCourse(treeLinks, memberMap, focusedNodeId ?? undefined, onEyeClick);
     setNodes(n);
     setEdges(e);
   }, [focusedNodeId, treeLinks, memberMap, onEyeClick, setNodes, setEdges]);
@@ -692,13 +440,14 @@ export default function Diagram() {
         if (res.success && res.data?.links) {
           setTreeLinks(res.data.links);
           setMemberMap(new Map(res.data.members?.map((m: MemberProfileRecord) => [m.id, m]) || []));
-        } else { setTreeLinks([]); setMemberMap(new Map()); }
+        } else { setTreeLinks([]);
+          setMemberMap(new Map()); }
       } catch { message.error("Lỗi tải cây môn đồ"); } finally { setLoading(false); }
     };
     loadTree();
   }, [selectedCourse, focusMyself, currentUserId, message]);
 
-  // ==================== API HANDLERS ====================
+  // ==================== API HANDLERS (CREATE / EDIT) ====================
   const reloadTree = async () => {
     const res = await fetch(`/api/discipleship-tree?courseId=${selectedCourse}`).then(r => r.json());
     if (res.success && res.data?.links) {
@@ -711,7 +460,7 @@ export default function Diagram() {
     const values = await panelForm.validateFields();
     setSubmitLoading(true);
     try {
-      const res = await fetch('/api/training-relations', {
+      const res = await fetch('/api/training-relations', { // ✅ Đã sửa endpoint
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -741,7 +490,7 @@ export default function Diagram() {
     const values = await panelForm.validateFields();
     setSubmitLoading(true);
     try {
-      const res = await fetch(`/api/training-relations/${editingLinkId}`, {
+      const res = await fetch(`/api/training-relations/${editingLinkId}`, { // ✅ Đã sửa endpoint
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -779,7 +528,8 @@ export default function Diagram() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fromId: currentUserId, toId: selectedMemberDetail.member.id, content: messageInput }),
       });
-      if (res.ok) { message.success("Gửi tin nhắn thành công!"); setMessageInput(""); }
+      if (res.ok) { message.success("Gửi tin nhắn thành công!");
+        setMessageInput(""); }
     } catch { message.error("Lỗi gửi tin nhắn"); }
   };
 
@@ -803,14 +553,14 @@ export default function Diagram() {
     setSelectedMemberDetail(null);
     setViewingMemberId(null);
     setPanelMode('view');
-    setSidebarsVisible(false);
+    setSidebarsVisible(false); // Ẩn cả hai panel
   }, []);
 
   // ==================== RENDER RIGHT PANEL ====================
   const renderRightPanel = () => {
     if (!rightPanelOpen) return null;
 
-    // VIEW
+    // 1. PANEL VIEW CHI TIẾT
     if (panelMode === 'view') {
       if (detailLoading) return <Flex vertical gap={16} className="p-4"><Skeleton active paragraph={{ rows: 6 }} /></Flex>;
       if (!selectedMemberDetail) return <div className="flex h-full items-center justify-center text-slate-400"><Empty description={T.msgEmpty} /></div>;
@@ -818,73 +568,28 @@ export default function Diagram() {
       const data = selectedMemberDetail;
       return (
         <Flex vertical className="h-full overflow-y-auto p-4 gap-4 pb-24">
-          <Card
-            size="small"
-            title={<span className="text-slate-700"><Mail size={14} className="inline mr-2" /> {T.info}</span>}
-            className="shadow-none border-slate-200"
-          >
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Avatar size={36} style={{ background: theme.defaultConfig.token?.colorPrimary }}>
-                  {data.member.fullName?.[0]}
-                </Avatar>
-                <div>
-                  <Text strong>{data.member.fullName}</Text>
-                  <br />
-                  <Text type="secondary" style={{ fontSize: 12 }}>{data.member.email || "-"}</Text>
-                </div>
-              </div>
-            </div>
+          <Card size="small" title={<span className="text-slate-700"><Mail size={14} className="inline mr-2" /> {T.info}</span>} className="shadow-none border-slate-200">
+            <div className="space-y-2"><div className="flex items-center gap-2"><Avatar size={36} style={{ background: theme.defaultConfig.token?.colorPrimary }}>{data.member.fullName?.[0]}</Avatar><div><Text strong>{data.member.fullName}</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>{data.member.email || "-"}</Text></div></div></div>
           </Card>
-          <Card
-            size="small"
-            title={<span className="text-slate-700"><Settings size={14} className="inline mr-2" /> {T.properties}</span>}
-            className="shadow-none border-slate-200"
-          >
+          <Card size="small" title={<span className="text-slate-700"><Settings size={14} className="inline mr-2" /> {T.properties}</span>} className="shadow-none border-slate-200">
             <Descriptions column={1} size="small" labelStyle={{ color: "#64748B", width: 80 }}>
-              <Descriptions.Item label="Vai trò">
-                <Tag color={data.member.roles?.length ? "processing" : "default"}>
-                  {data.member.roles?.[0] || "Thành viên"}
-                </Tag>
-              </Descriptions.Item>
+              <Descriptions.Item label="Vai trò"><Tag color={data.member.roles?.length ? "processing" : "default"}>{data.member.roles?.[0] || "Thành viên"}</Tag></Descriptions.Item>
               <Descriptions.Item label="Điện thoại">{data.member.phone || "-"}</Descriptions.Item>
               <Descriptions.Item label="Ngày sinh">{data.member.birthDate || "-"}</Descriptions.Item>
               <Descriptions.Item label="Chi hội">{data.member.branchName || "-"}</Descriptions.Item>
             </Descriptions>
           </Card>
           {data.mentorStats.length > 0 && (
-            <Card
-              size="small"
-              title={<span className="text-slate-700"><PlayCircle size={14} className="inline mr-2" /> {T.runtime}</span>}
-              className="shadow-none border-slate-200"
-            >
-              {data.mentorStats.map(stat => (
-                <div key={stat.courseId} className="flex justify-between py-1 text-sm border-b border-slate-50 border-dashed last:border-0">
-                  <span>{stat.courseName}</span>
-                  <span className="font-semibold text-slate-700">{stat.totalDisciples} <span className="font-normal text-slate-400">môn đồ</span></span>
-                </div>
-              ))}
+            <Card size="small" title={<span className="text-slate-700"><PlayCircle size={14} className="inline mr-2" /> {T.runtime}</span>} className="shadow-none border-slate-200">
+              {data.mentorStats.map(stat => <div key={stat.courseId} className="flex justify-between py-1 text-sm border-b border-slate-50 border-dashed last:border-0"><span>{stat.courseName}</span><span className="font-semibold text-slate-700">{stat.totalDisciples} <span className="font-normal text-slate-400">môn đồ</span></span></div>)}
             </Card>
           )}
-          <Card
-            size="small"
-            title={<span className="text-slate-700"><Database size={14} className="inline mr-2" /> {T.variables}</span>}
-            className="shadow-none border-slate-200 pb-6"
-          >
+          <Card size="small" title={<span className="text-slate-700"><Database size={14} className="inline mr-2" /> {T.variables}</span>} className="shadow-none border-slate-200 pb-6">
             <Timeline
               items={[
-                ...data.ancestors.slice().reverse().map(a => ({
-                  color: "blue",
-                  children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100"><span className="font-semibold">Người dẫn dắt:</span> {a.member.fullName}</div>
-                })),
-                {
-                  color: "green",
-                  children: <div className="text-xs bg-green-50 px-2 py-1 rounded border border-green-100 font-semibold text-green-700"> {data.member.fullName} (Đang xem)</div>
-                },
-                ...data.descendants.map(d => ({
-                  color: "orange",
-                  children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100 flex justify-between"><span><span className="font-semibold text-orange-600">Môn đồ:</span> {d.member.fullName}</span><span className="text-slate-400 text-[10px]">Cấp {d.level}</span></div>
-                })),
+                ...data.ancestors.slice().reverse().map(a => ({ color: "blue", children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100"><span className="font-semibold">Người dẫn dắt:</span> {a.member.fullName}</div> })),
+                { color: "green", children: <div className="text-xs bg-green-50 px-2 py-1 rounded border border-green-100 font-semibold text-green-700"> {data.member.fullName} (Đang xem)</div> },
+                ...data.descendants.map(d => ({ color: "orange", children: <div className="text-xs bg-slate-50 px-2 py-1 rounded border border-slate-100 flex justify-between"><span><span className="font-semibold text-orange-600">Môn đồ:</span> {d.member.fullName}</span><span className="text-slate-400 text-[10px]">Cấp {d.level}</span></div> })),
               ]}
             />
           </Card>
@@ -897,185 +602,122 @@ export default function Diagram() {
       );
     }
 
-    // CREATE / EDIT FORM – ĐÃ ĐƯỢC STYLE LẠI
+    // 2. PANEL CREATE / EDIT FORM (GIỐNG HỆT TrainingRelationsPage)
     return (
-      <Flex vertical className="h-full overflow-hidden p-4 bg-gradient-to-b from-white to-green-50">
-        <div className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2 border-b pb-2">
-          {panelMode === 'create' ? (
-            <>
-              <Flower size={20} className="text-green-500" />
-              {T.createRelation}
-            </>
-          ) : (
-            <>
-              <Sparkles size={20} className="text-amber-500" />
-              {T.editRelation}
-            </>
-          )}
-        </div>
-
+      <Flex vertical className="h-full overflow-hidden p-4 bg-white">
+        <div className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">{panelMode === 'create' ? T.createRelation : T.editRelation}</div>
         <div className="flex-1 overflow-y-auto pr-1">
-          <Form
-            form={panelForm}
-            layout="vertical"
-            requiredMark="optional"
-            className="space-y-4"
-          >
-            <div className="bg-white/70 backdrop-blur-sm p-4 rounded-xl border border-green-100 shadow-sm">
-              <Form.Item
-                label={<span><BookOpen size={14} className="mr-1" /> {T.course}</span>}
-                name="courseId"
-                rules={[{ required: true, message: T.msgRequiredCourse }]}
-              >
-                <Select
-                  options={courseOptions}
-                  placeholder="Chọn khóa học"
-                  showSearch
-                  optionFilterProp="label"
-                  className="rounded-lg"
-                />
-              </Form.Item>
+          <Form form={panelForm} layout="vertical" requiredMark="optional">
+            {/* Select Course */}
+            <Form.Item label={T.course} name="courseId" rules={[{ required: true, message: T.msgRequiredCourse }]}>
+              <Select
+                options={courseOptions}
+                placeholder="Chọn khóa học"
+                showSearch
+                optionFilterProp="label"
+              />
+            </Form.Item>
 
-              <Form.Item
-                label={<span><GraduationCap size={14} className="mr-1" /> {T.mentor}</span>}
-                name="mentorId"
-                rules={[
-                  { required: true, message: T.msgRequiredMentor },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      if (!value || value !== getFieldValue('discipleId')) return Promise.resolve();
-                      return Promise.reject(new Error(T.msgMentorDiscipleDiff));
-                    },
-                  }),
+            {/* Select Mentor */}
+            <Form.Item label={T.mentor} name="mentorId" rules={[
+              { required: true, message: T.msgRequiredMentor },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || value !== getFieldValue('discipleId')) return Promise.resolve();
+                  return Promise.reject(new Error(T.msgMentorDiscipleDiff));
+                },
+              }),
+            ]}>
+              <Select
+                options={mentorOptions}
+                placeholder={T.selectMentor}
+                showSearch
+                optionFilterProp="label"
+              />
+            </Form.Item>
+
+            {/* Select Disciple */}
+            <Form.Item label={T.disciple} name="discipleId" rules={[
+              { required: true, message: T.msgRequiredDisciple },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || value !== getFieldValue('mentorId')) return Promise.resolve();
+                  return Promise.reject(new Error(T.msgMentorDiscipleDiff));
+                },
+              }),
+            ]}>
+              <Select
+                options={discipleOptions}
+                placeholder={T.selectDisciple}
+                showSearch
+                optionFilterProp="label"
+              />
+            </Form.Item>
+
+            {/* Start Date */}
+            <Form.Item label={T.startDate} name="startDate" rules={[
+              { required: true, message: T.msgRequiredStartDate },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  const end = getFieldValue('endDate');
+                  if (!value || !end || value <= end) return Promise.resolve();
+                  return Promise.reject(new Error(T.msgStartBeforeEnd));
+                },
+              }),
+            ]}>
+              <Input type="date" className="w-full" />
+            </Form.Item>
+
+            {/* End Date */}
+            <Form.Item label={T.endDate} name="endDate" rules={[
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  const start = getFieldValue('startDate');
+                  if (!value || !start || start <= value) return Promise.resolve();
+                  return Promise.reject(new Error(T.msgEndAfterStart));
+                },
+              }),
+            ]}>
+              <Input type="date" className="w-full" />
+            </Form.Item>
+
+            {/* Status */}
+            <Form.Item label={T.status} name="status" initialValue="in_progress">
+              <Select
+                options={[
+                  { value: 'in_progress', label: T.in_progress },
+                  { value: 'completed', label: T.completed }
                 ]}
-              >
-                <Select
-                  options={mentorOptions}
-                  placeholder={T.selectMentor}
-                  showSearch
-                  optionFilterProp="label"
-                  className="rounded-lg"
-                />
-              </Form.Item>
+              />
+            </Form.Item>
 
-              <Form.Item
-                label={<span><Users size={14} className="mr-1" /> {T.disciple}</span>}
-                name="discipleId"
-                rules={[
-                  { required: true, message: T.msgRequiredDisciple },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      if (!value || value !== getFieldValue('mentorId')) return Promise.resolve();
-                      return Promise.reject(new Error(T.msgMentorDiscipleDiff));
-                    },
-                  }),
-                ]}
-              >
-                <Select
-                  options={discipleOptions}
-                  placeholder={T.selectDisciple}
-                  showSearch
-                  optionFilterProp="label"
-                  className="rounded-lg"
-                />
-              </Form.Item>
-            </div>
-
-            <div className="bg-white/70 backdrop-blur-sm p-4 rounded-xl border border-green-100 shadow-sm">
-              <Form.Item
-                label={<span><Calendar size={14} className="mr-1" /> {T.startDate}</span>}
-                name="startDate"
-                rules={[
-                  { required: true, message: T.msgRequiredStartDate },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      const end = getFieldValue('endDate');
-                      if (!value || !end || value <= end) return Promise.resolve();
-                      return Promise.reject(new Error(T.msgStartBeforeEnd));
-                    },
-                  }),
-                ]}
-              >
-                <Input type="date" className="w-full rounded-lg" />
-              </Form.Item>
-
-              <Form.Item
-                label={<span><Calendar size={14} className="mr-1" /> {T.endDate}</span>}
-                name="endDate"
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      const start = getFieldValue('startDate');
-                      if (!value || !start || start <= value) return Promise.resolve();
-                      return Promise.reject(new Error(T.msgEndAfterStart));
-                    },
-                  }),
-                ]}
-              >
-                <Input type="date" className="w-full rounded-lg" />
-              </Form.Item>
-
-              <Form.Item
-                label={<span><Settings size={14} className="mr-1" /> {T.status}</span>}
-                name="status"
-                initialValue="in_progress"
-              >
-                <Select
-                  options={[
-                    { value: 'in_progress', label: T.in_progress },
-                    { value: 'completed', label: T.completed }
-                  ]}
-                  className="rounded-lg"
-                />
-              </Form.Item>
-
-              <Form.Item
-                label={<span><Mail size={14} className="mr-1" /> {T.notes}</span>}
-                name="notes"
-              >
-                <Input.TextArea rows={4} placeholder="Nhập ghi chú..." className="rounded-lg" />
-              </Form.Item>
-            </div>
+            {/* Notes */}
+            <Form.Item label={T.notes} name="notes">
+              <Input.TextArea rows={4} placeholder="Nhập ghi chú..." />
+            </Form.Item>
           </Form>
         </div>
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-green-100 mt-2 shrink-0 bg-white/50 backdrop-blur-sm p-2 rounded-xl">
-          <Button onClick={() => { setPanelMode('view'); closeRightPanel(); }} className="rounded-full">
-            {T.cancelBtn}
-          </Button>
-          <Button
-            type="primary"
-            loading={submitLoading}
-            onClick={handleSubmit}
-            style={{ background: "#10B981", borderColor: "#10B981" }}
-            className="rounded-full px-6 shadow-md hover:shadow-lg transition-all"
-          >
-            {panelMode === 'create' ? (
-              <>
-                <UserPlus size={16} className="mr-1" /> {T.addRelationBtn}
-              </>
-            ) : (
-              <>
-                <Save size={16} className="mr-1" /> {T.saveBtn}
-              </>
-            )}
+        {/* Footer Actions */}
+        <div className="flex justify-end gap-2 pt-4 border-t mt-2 shrink-0">
+          <Button onClick={() => { setPanelMode('view');
+            closeRightPanel(); }}>{T.cancelBtn}</Button>
+          <Button type="primary" loading={submitLoading} onClick={handleSubmit} style={{ background: "#F97316", borderColor: "#F97316" }}>
+            {panelMode === 'create' ? T.addRelationBtn : T.saveBtn}
           </Button>
         </div>
       </Flex>
     );
   };
 
-  // ==================== MAIN UI ====================
+  // ==================== UI LAYOUT ====================
   return (
-    <div className="h-screen w-full flex flex-col bg-gradient-to-br from-green-50 via-white to-emerald-50 font-sans overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex justify-between items-center px-4 py-3 bg-white/80 backdrop-blur-sm border-b border-green-100 z-10 shadow-sm">
+    <div className="h-screen w-full flex flex-col bg-[#f8fafc] font-sans overflow-hidden">
+      {/* TOOLBAR */}
+      <div className="flex justify-between items-center px-4 py-3 bg-white border-b border-gray-200 z-10">
         <div className="flex items-center gap-3">
           <Space>
-            <div className="font-bold text-slate-700 text-base flex items-center gap-2">
-              <TreePine size={20} className="text-green-600" />
-              {T.nodeLibrary}
-            </div>
+            <div className="font-bold text-slate-700 text-base">{T.nodeLibrary}</div>
           </Space>
         </div>
         <div className="flex items-center gap-2">
@@ -1084,7 +726,6 @@ export default function Diagram() {
             onChange={setSelectedCourse}
             style={{ width: 180 }}
             placeholder={T.selectCourse}
-            className="rounded-full"
           >
             {courses.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}
           </Select>
@@ -1092,8 +733,7 @@ export default function Diagram() {
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            style={{ background: "#10B981", borderColor: "#10B981" }}
-            className="rounded-full shadow-md hover:shadow-lg transition-all"
+            style={{ background: "#F97316", borderColor: "#F97316" }}
             onClick={openCreatePanel}
           >
             {T.createNode}
@@ -1101,7 +741,6 @@ export default function Diagram() {
 
           <Button
             icon={sidebarsVisible ? <X size={14} /> : <MenuOutlined />}
-            className="rounded-full"
             onClick={() => setSidebarsVisible(!sidebarsVisible)}
           />
 
@@ -1109,7 +748,6 @@ export default function Diagram() {
             type={focusMyself ? "primary" : "default"}
             onClick={() => setFocusMyself(!focusMyself)}
             icon={<EyeOutlined />}
-            className="rounded-full"
           >
             {T.myDiagram}
           </Button>
@@ -1117,40 +755,19 @@ export default function Diagram() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar */}
+        {/* LEFT SIDEBAR */}
         {sidebarsVisible && (
-          <div className="w-[320px] min-w-[320px] bg-white/90 backdrop-blur-sm border-r border-green-100 flex flex-col h-full">
-            <div className="p-4 border-b border-green-100">
-              <Input
-                prefix={<Search size={14} className="text-slate-400" />}
-                placeholder={T.searchMembers}
-                className="mb-3 rounded-full"
-              />
-              <Button
-                block
-                style={{ background: "#10B981", borderColor: "#10B981", color: "white" }}
-                className="rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
-                onClick={openCreatePanel}
-              >
-                <PlusOutlined /> {T.createNode}
-              </Button>
+          <div className="w-[320px] min-w-[320px] bg-white border-r border-gray-200 flex flex-col h-full">
+            <div className="p-4 border-b border-gray-100">
+              <Input prefix={<Search size={14} className="text-slate-400" />} placeholder={T.searchMembers} className="mb-3" />
+              <Button block style={{ background: "#F97316", borderColor: "#F97316", color: "white", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={openCreatePanel}><PlusOutlined /> {T.createNode}</Button>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1 flex items-center gap-1">
-                <TreePine size={12} /> Hệ thống lãnh đạo
-              </div>
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-3 text-sm text-slate-700 shadow-sm">
-                <BookOpen size={14} className="inline mr-2" /> Đấng Tối Cao (Gốc)
-              </div>
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1 mt-4 flex items-center gap-1">
-                <GraduationCap size={12} /> Người hướng dẫn
-              </div>
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1">Hệ thống lãnh đạo</div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700"><BookOpen size={14} className="inline mr-2" /> Đấng Tối Cao (Gốc)</div>
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 py-1 mt-4">Người hướng dẫn</div>
               {Array.from(memberMap.values()).slice(0, 5).map(m => (
-                <div
-                  key={m.id}
-                  onClick={() => onEyeClick(m.id)}
-                  className="bg-white border border-slate-200 rounded-2xl p-2 text-sm text-slate-600 hover:bg-green-50 cursor-pointer transition-all flex items-center gap-2 shadow-sm hover:shadow-md"
-                >
+                <div key={m.id} onClick={() => onEyeClick(m.id)} className="bg-white border border-slate-200 rounded-lg p-2 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors flex items-center gap-2">
                   <Avatar size={20} style={{ fontSize: 10 }}>{m.fullName?.[0]}</Avatar> {m.fullName}
                 </div>
               ))}
@@ -1158,13 +775,9 @@ export default function Diagram() {
           </div>
         )}
 
-        {/* Center Canvas */}
+        {/* CENTER CANVAS */}
         <div className="flex-1 relative bg-[#fafbfc]">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-20">
-              <Spin size="large" />
-            </div>
-          )}
+          {loading && <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-20"><Spin size="large" /></div>}
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -1178,45 +791,24 @@ export default function Diagram() {
             maxZoom={2.5}
           >
             <Background variant={BackgroundVariant.Dots} gap={12} color="#d1d5db" />
-            <Controls className="!bg-white !border !border-slate-200 !shadow-sm rounded-full" />
-            <MiniMap className="!bg-white !border !border-slate-200 !shadow-sm rounded-xl" />
-            <Panel position="top-left" className="bg-white/80 backdrop-blur-sm border border-green-200 px-3 py-1.5 rounded-full shadow-sm text-xs text-slate-600">
-              <div className="font-semibold flex items-center gap-1">
-                <TreePine size={14} />
-                {courses.find(c => c.id === selectedCourse)?.name || "Cây Môn Đồ"}
-              </div>
+            <Controls className="!bg-white !border !border-slate-200 !shadow-sm" />
+            <MiniMap className="!bg-white !border !border-slate-200 !shadow-sm" />
+            <Panel position="top-left" className="bg-white/80 backdrop-blur-sm border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm text-xs text-slate-600">
+              <div className="font-semibold">{courses.find(c => c.id === selectedCourse)?.name || "Cây Môn Đồ"}</div>
               <div className="text-slate-400 text-[10px]">{T.dragZoom}</div>
             </Panel>
           </ReactFlow>
         </div>
 
-        {/* Right Sidebar */}
+        {/* RIGHT SIDEBAR */}
         {sidebarsVisible && (
-          <div className="w-[380px] min-w-[380px] bg-white/90 backdrop-blur-sm border-l border-green-100 flex flex-col h-full">
-            <div className="px-4 py-3 border-b border-green-100 flex justify-between items-center bg-white/50 shrink-0">
+          <div className="w-[380px] min-w-[380px] bg-white border-l border-gray-200 flex flex-col h-full">
+            <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center bg-white shrink-0">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-800">
-                  {panelMode === 'view' ? (
-                    <>
-                      <Leaf size={16} className="inline mr-1 text-green-500" /> Hệ thống cấp bậc
-                    </>
-                  ) : panelMode === 'create' ? (
-                    <>
-                      <Flower size={16} className="inline mr-1 text-pink-400" /> {T.createRelation}
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={16} className="inline mr-1 text-amber-400" /> {T.editRelation}
-                    </>
-                  )}
-                </span>
-                {panelMode === 'view' && rightPanelOpen && selectedMemberDetail && (
-                  <Tag color="processing" className="text-[10px] rounded-full">Đang chọn</Tag>
-                )}
+                <span className="font-semibold text-slate-800">{panelMode === 'view' ? 'Hệ thống cấp bậc' : (panelMode === 'create' ? T.createRelation : T.editRelation)}</span>
+                {panelMode === 'view' && rightPanelOpen && selectedMemberDetail && <Tag color="processing" className="text-[10px]">Đang chọn</Tag>}
               </div>
-              {rightPanelOpen && (
-                <Button type="text" size="small" icon={<X size={14} />} onClick={closeRightPanel} />
-              )}
+              {rightPanelOpen && <Button type="text" size="small" icon={<X size={14} />} onClick={closeRightPanel} />}
             </div>
             <div className="flex-1 overflow-hidden">
               {renderRightPanel()}
@@ -1224,21 +816,6 @@ export default function Diagram() {
           </div>
         )}
       </div>
-
-      {/* CSS Animation cho hoa lá và node */}
-      <style jsx>{`
-        @keyframes sway {
-          0%, 100% { transform: rotate(-5deg); }
-          50% { transform: rotate(5deg); }
-        }
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(20px) scale(0.95); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        .fade-in-node {
-          animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-        }
-      `}</style>
     </div>
   );
 }
