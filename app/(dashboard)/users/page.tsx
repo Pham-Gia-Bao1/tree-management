@@ -7,7 +7,7 @@ import {
     Button,
     Descriptions,
     Divider,
-    Drawer,  // Keep if used elsewhere; otherwise can be removed
+    Drawer,
     Empty,
     Flex,
     Form,
@@ -27,6 +27,7 @@ import {
     DeleteOutlined,
     EditOutlined,
     EyeOutlined,
+    FilterOutlined,
     IdcardOutlined,
     MailOutlined,
     PlusOutlined,
@@ -127,9 +128,12 @@ export default function UsersPage() {
     const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
     const [selectedRows, setSelectedRows] = useState<UserTableRecord[]>([]);
 
-    // Detail modal
+    // Detail drawer
     const [detailRecord, setDetailRecord] = useState<UserTableRecord | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
+
+    // Filter drawer
+    const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
     const loadUsers = async () => {
         try {
@@ -384,7 +388,7 @@ export default function UsersPage() {
     };
 
     const selectionActions = (
-        <>
+        <Space>
             <Button
                 icon={<EyeOutlined />}
                 disabled={selectedRows.length !== 1}
@@ -392,7 +396,6 @@ export default function UsersPage() {
             >
                 View
             </Button>
-
             <Button
                 icon={<EditOutlined />}
                 disabled={selectedRows.length !== 1}
@@ -400,15 +403,13 @@ export default function UsersPage() {
             >
                 Edit
             </Button>
-
             <Button icon={<StopOutlined />} onClick={handleBulkToggleStatus}>
                 Toggle status
             </Button>
-
             <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
                 Delete
             </Button>
-        </>
+        </Space>
     );
 
     const columns = [
@@ -424,15 +425,12 @@ export default function UsersPage() {
                     >
                         {initials(record.fullName) || <UserOutlined />}
                     </Avatar>
-
-                    <div style={{ minWidth: 0 }}>
-                        <div className="font-medium" style={{ lineHeight: 1.3 }}>
-                            {record.fullName}
-                        </div>
+                    <Flex vertical gap={2}>
+                        <Text strong>{record.fullName}</Text>
                         <Text type="secondary" style={{ fontSize: 12 }}>
                             {record.email}
                         </Text>
-                    </div>
+                    </Flex>
                 </Flex>
             ),
         },
@@ -472,50 +470,6 @@ export default function UsersPage() {
                 </Tag>
             ),
         },
-        {
-            title: '',
-            width: 160,
-            align: 'right' as const,
-            render: (_: unknown, record: UserTableRecord) => (
-                <Space size={4}>
-                    <Tooltip title="View details">
-                        <Button
-                            size="small"
-                            icon={<EyeOutlined />}
-                            onClick={() => openDetail(record)}
-                        />
-                    </Tooltip>
-
-                    <Tooltip title="Edit">
-                        <Button
-                            size="small"
-                            icon={<EditOutlined />}
-                            onClick={() => openEdit(record)}
-                        />
-                    </Tooltip>
-
-                    <Tooltip title={record.status === 'active' ? 'Deactivate' : 'Activate'}>
-                        <Button
-                            size="small"
-                            icon={<StopOutlined />}
-                            onClick={() => toggleStatus(record)}
-                        />
-                    </Tooltip>
-
-                    <Popconfirm
-                        title="Delete this user?"
-                        description="This action cannot be undone."
-                        okText="Delete"
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => handleDelete(record.id)}
-                    >
-                        <Tooltip title="Delete">
-                            <Button danger size="small" icon={<DeleteOutlined />} />
-                        </Tooltip>
-                    </Popconfirm>
-                </Space>
-            ),
-        },
     ];
 
     if (!currentUserRoles.includes('ADMIN')) {
@@ -547,36 +501,17 @@ export default function UsersPage() {
                 selectionActions={selectionActions}
                 selectionLabel="user"
                 actions={
-                    <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-                        New user
-                    </Button>
-                }
-                filters={
-                    <>
-                        <Select
-                            allowClear
-                            placeholder="Branch"
-                            style={{ width: 180 }}
-                            options={branchFilterOptions}
-                            onChange={setBranchFilter}
-                        />
-
-                        <Select
-                            allowClear
-                            placeholder="Role"
-                            style={{ width: 140 }}
-                            onChange={setRoleFilter}
-                            options={ROLE_OPTIONS}
-                        />
-
-                        <Select
-                            allowClear
-                            placeholder="Status"
-                            style={{ width: 140 }}
-                            onChange={setStatusFilter}
-                            options={STATUS_OPTIONS}
-                        />
-                    </>
+                    <Space>
+                        <Button
+                            icon={<FilterOutlined />}
+                            onClick={() => setFilterDrawerOpen(true)}
+                        >
+                            Filters
+                        </Button>
+                        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                            New user
+                        </Button>
+                    </Space>
                 }
                 tableProps={{
                     size: 'middle',
@@ -584,6 +519,57 @@ export default function UsersPage() {
                     scroll: { x: 1200 },
                 }}
             />
+
+            {/* Filter Drawer */}
+            <Drawer
+                title="Filters"
+                placement="right"
+                open={filterDrawerOpen}
+                onClose={() => setFilterDrawerOpen(false)}
+                width={360}
+                destroyOnClose
+                footer={
+                    <Button onClick={() => setFilterDrawerOpen(false)} block>
+                        Close
+                    </Button>
+                }
+            >
+                <Flex vertical gap={16}>
+                    <Select
+                        allowClear
+                        placeholder="Branch"
+                        style={{ width: '100%' }}
+                        options={branchFilterOptions}
+                        onChange={setBranchFilter}
+                        value={branchFilter}
+                    />
+                    <Select
+                        allowClear
+                        placeholder="Role"
+                        style={{ width: '100%' }}
+                        onChange={setRoleFilter}
+                        options={ROLE_OPTIONS}
+                        value={roleFilter}
+                    />
+                    <Select
+                        allowClear
+                        placeholder="Status"
+                        style={{ width: '100%' }}
+                        onChange={setStatusFilter}
+                        options={STATUS_OPTIONS}
+                        value={statusFilter}
+                    />
+                    <Button
+                        onClick={() => {
+                            setBranchFilter(undefined);
+                            setRoleFilter(undefined);
+                            setStatusFilter(undefined);
+                        }}
+                    >
+                        Reset filters
+                    </Button>
+                </Flex>
+            </Drawer>
 
             {/* Create / Edit modal */}
             <Modal
@@ -596,11 +582,10 @@ export default function UsersPage() {
                 confirmLoading={saving}
                 destroyOnClose
             >
-                <Form form={form} layout="vertical" className="mt-4">
+                <Form form={form} layout="vertical">
                     <Form.Item name="name" label="Full name" rules={[{ required: true }]}>
                         <Input placeholder="Jane Doe" />
                     </Form.Item>
-
                     <Form.Item
                         name="email"
                         label="Email"
@@ -608,7 +593,6 @@ export default function UsersPage() {
                     >
                         <Input placeholder="jane@example.com" />
                     </Form.Item>
-
                     <Form.Item
                         name="branchId"
                         label="Branch"
@@ -622,7 +606,6 @@ export default function UsersPage() {
                             optionFilterProp="label"
                         />
                     </Form.Item>
-
                     <Form.Item
                         name="roles"
                         label="Roles"
@@ -630,7 +613,6 @@ export default function UsersPage() {
                     >
                         <Select mode="multiple" placeholder="Select roles" options={ROLE_OPTIONS} />
                     </Form.Item>
-
                     <Form.Item
                         name="status"
                         label="Status"
@@ -642,10 +624,11 @@ export default function UsersPage() {
                 </Form>
             </Modal>
 
-            {/* Detail Modal – spacious and clean */}
-            <Modal
+            {/* Detail Drawer */}
+            <Drawer
                 open={detailOpen}
-                width={800}
+                onClose={() => setDetailOpen(false)}
+                size="large"
                 title={
                     <Flex align="center" gap={12}>
                         <Avatar
@@ -654,17 +637,18 @@ export default function UsersPage() {
                         >
                             {detailRecord ? initials(detailRecord.fullName) || <UserOutlined /> : <UserOutlined />}
                         </Avatar>
-                        <span style={{ fontSize: 20, fontWeight: 500 }}>
-                            {detailRecord?.fullName || 'User details'}
-                        </span>
-                        {detailRecord && (
-                            <Tag color={STATUS_COLORS[detailRecord.status] ?? 'default'} bordered={false}>
-                                {detailRecord.status}
-                            </Tag>
-                        )}
+                        <Space direction="vertical" size={0}>
+                            <Text strong style={{ fontSize: 20 }}>
+                                {detailRecord?.fullName || 'User details'}
+                            </Text>
+                            {detailRecord && (
+                                <Tag color={STATUS_COLORS[detailRecord.status] ?? 'default'}>
+                                    {detailRecord.status}
+                                </Tag>
+                            )}
+                        </Space>
                     </Flex>
                 }
-                onCancel={() => setDetailOpen(false)}
                 footer={
                     detailRecord ? (
                         <Flex justify="space-between" align="center">
@@ -715,8 +699,7 @@ export default function UsersPage() {
             >
                 {detailRecord ? (
                     <Flex vertical gap={24}>
-                        {/* Two‑column description */}
-                        <div style={{ background: '#fafafa', padding: 16, borderRadius: 8 }}>
+                        <Flex vertical gap={12}>
                             <Descriptions column={2} size="middle" bordered={false}>
                                 <Descriptions.Item label={<><MailOutlined /> Email</>}>
                                     {detailRecord.email}
@@ -733,14 +716,9 @@ export default function UsersPage() {
                                     </Text>
                                 </Descriptions.Item>
                             </Descriptions>
-                        </div>
-
-                        {/* Roles section – fixed: no orientation prop */}
-                        <Flex align="center" gap={12} style={{ margin: '8px 0 4px' }}>
-                            <Text strong style={{ fontSize: 14 }}>Roles</Text>
-                            <Divider style={{ flex: 1, margin: 0 }} />
                         </Flex>
 
+                        <Divider orientation="left">Roles</Divider>
                         <Space size={8} wrap>
                             {detailRecord.roles.map((role) => (
                                 <Tag key={role} color={ROLE_COLORS[role]} bordered={false} style={{ fontSize: 14 }}>
@@ -752,7 +730,7 @@ export default function UsersPage() {
                 ) : (
                     <Empty description="No user selected" />
                 )}
-            </Modal>
+            </Drawer>
         </>
     );
 }
