@@ -4,10 +4,14 @@ import { useEffect, useMemo, useState, type Key } from 'react';
 import {
     App,
     Avatar,
+    Badge,
     Button,
+    Checkbox,
+    Collapse,
     Descriptions,
     Divider,
     Drawer,
+    Dropdown,
     Empty,
     Flex,
     Form,
@@ -23,22 +27,29 @@ import {
 import {
     ApartmentOutlined,
     CalendarOutlined,
+    CheckCircleFilled,
     DeleteOutlined,
+    DownloadOutlined,
     EditOutlined,
+    EllipsisOutlined,
     EyeOutlined,
     FilterOutlined,
     IdcardOutlined,
     MailOutlined,
+    MinusCircleFilled,
     PlusOutlined,
+    SearchOutlined,
     StopOutlined,
+    UploadOutlined,
     UserOutlined,
+    WarningFilled,
 } from '@ant-design/icons';
 
 import type { UserRecord } from '@/types/user.types';
 import { RoleCode } from '@/types/database.types';
 import DataPage from '@/components/common/DataPage';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 type UserTableRecord = UserRecord & {
     branch: string;
@@ -55,33 +66,13 @@ const ROLE_OPTIONS: { value: RoleCode; label: string }[] = [
     { value: 'MEMBER', label: 'Member' },
 ];
 
-const ROLE_COLORS: Record<RoleCode, string> = {
-    ADMIN: 'red',
-    MENTOR: 'blue',
-    MEMBER: 'green',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-    active: 'success',
-    inactive: 'default',
-    pending: 'warning',
-};
-
 const STATUS_OPTIONS = [
     { value: 'active', label: 'Active' },
     { value: 'inactive', label: 'Inactive' },
     { value: 'pending', label: 'Pending' },
 ];
 
-const AVATAR_PALETTE = [
-    '#f56a00',
-    '#7265e6',
-    '#ffbf00',
-    '#00a2ae',
-    '#1677ff',
-    '#eb2f96',
-    '#52c41a',
-];
+const AVATAR_PALETTE = ['#7C3AED', '#3B82F6', '#F59E0B', '#22C55E', '#EF4444', '#EC4899', '#06B6D4'];
 
 function avatarColor(seed: string) {
     let hash = 0;
@@ -100,6 +91,87 @@ function initials(name: string) {
         .join('');
 }
 
+function roleLabel(roles: RoleCode[]) {
+    if (!roles?.length) return '—';
+    const label = roles[0].charAt(0) + roles[0].slice(1).toLowerCase();
+    return roles.length > 1 ? `${label} +${roles.length - 1}` : label;
+}
+
+/**
+ * The reference design shows a few extra columns (Login ID, MER, Business
+ * Role, Division, Department) that don't exist on `UserRecord` yet. Until
+ * those fields are added on the backend, we fall back to the closest
+ * equivalent we already have, or an em-dash. Swap these out once the API
+ * returns the real fields.
+ */
+function getDisplayField(user: UserTableRecord, key: 'loginId' | 'mer' | 'businessRole' | 'division' | 'department') {
+    const record = user as unknown as Record<string, string | undefined>;
+
+    switch (key) {
+        case 'loginId':
+            return record.loginId ?? user.email;
+        case 'division':
+            return record.division ?? user.branch ?? '—';
+        case 'department':
+            return record.department ?? user.branch ?? '—';
+        default:
+            return record[key] ?? '—';
+    }
+}
+
+/** Filter section shown inside the Filter drawer, styled after the reference design. */
+function FilterSection({
+    title,
+    options,
+    selected,
+    onChange,
+}: {
+    title: string;
+    options: { value: string; label: string }[];
+    selected: string[];
+    onChange: (values: string[]) => void;
+}) {
+    const [query, setQuery] = useState('');
+
+    const visibleOptions = query
+        ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+        : options;
+
+    return (
+        <Flex vertical gap={10}>
+            <Input
+                allowClear
+                size="small"
+                placeholder="Search by ..."
+                prefix={<SearchOutlined style={{ color: 'rgba(0,0,0,0.3)' }} />}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+            />
+            <Checkbox.Group
+                value={selected}
+                onChange={(values) => onChange(values as string[])}
+                style={{ width: '100%' }}
+            >
+                <Flex vertical gap={8}>
+                    {visibleOptions.map((option) => (
+                        <Checkbox key={option.value} value={option.value}>
+                            {option.label}
+                        </Checkbox>
+                    ))}
+                    {visibleOptions.length === 0 && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            No {title.toLowerCase()} found
+                        </Text>
+                    )}
+                </Flex>
+            </Checkbox.Group>
+        </Flex>
+    );
+}
+
+type FilterState = { branch: string[]; role: string[]; status: string[] };
+const EMPTY_FILTERS: FilterState = { branch: [], role: [], status: [] };
+
 export default function UsersPage() {
     const { message, modal } = App.useApp();
 
@@ -109,14 +181,18 @@ export default function UsersPage() {
 
     const [data, setData] = useState<UserTableRecord[]>([]);
     const [loading, setLoading] = useState(false);
+    const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
 
     const [branchOptions, setBranchOptions] = useState<BranchOption[]>([]);
     const [branchLoading, setBranchLoading] = useState(false);
 
     const [search, setSearch] = useState('');
-    const [branchFilter, setBranchFilter] = useState<string>();
-    const [roleFilter, setRoleFilter] = useState<string>();
-    const [statusFilter, setStatusFilter] = useState<string>();
+
+    // Applied filters drive the table; draft filters are edited inside the
+    // drawer and only take effect once "Apply" is pressed, matching the
+    // reference design.
+    const [appliedFilters, setAppliedFilters] = useState<FilterState>(EMPTY_FILTERS);
+    const [draftFilters, setDraftFilters] = useState<FilterState>(EMPTY_FILTERS);
 
     const [editingRecord, setEditingRecord] = useState<UserTableRecord | null>(null);
     const [open, setOpen] = useState(false);
@@ -134,31 +210,32 @@ export default function UsersPage() {
     // Filter drawer
     const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
+    // Activate / deactivate confirmation
+    const [statusModal, setStatusModal] = useState<{
+        action: 'activate' | 'deactivate';
+        records: UserTableRecord[];
+    } | null>(null);
+    const [statusSubmitting, setStatusSubmitting] = useState(false);
+
     const loadUsers = async () => {
         try {
             setLoading(true);
 
             const params = new URLSearchParams();
-
             if (search) params.set('search', search);
-            if (branchFilter) params.set('branchId', branchFilter);
-            if (roleFilter) params.set('role', roleFilter);
-            if (statusFilter) params.set('status', statusFilter);
 
             const response = await fetch(`/api/users?${params.toString()}`);
-
             if (!response.ok) throw new Error();
 
             const payload = await response.json();
 
-            const users: UserTableRecord[] = (payload.data ?? []).map(
-                (user: UserRecord) => ({
-                    ...user,
-                    branch: user.branchName ?? '',
-                }),
-            );
+            const users: UserTableRecord[] = (payload.data ?? []).map((user: UserRecord) => ({
+                ...user,
+                branch: user.branchName ?? '',
+            }));
 
             setData(users);
+            setLastLoadedAt(new Date());
         } catch {
             message.error('Failed to load users');
         } finally {
@@ -171,7 +248,6 @@ export default function UsersPage() {
             setBranchLoading(true);
 
             const response = await fetch('/api/branches');
-
             if (!response.ok) throw new Error();
 
             const payload = await response.json();
@@ -197,9 +273,10 @@ export default function UsersPage() {
 
     const branchFilterOptions = useMemo(
         () =>
-            Array.from(new Set(data.map((item) => item.branch).filter(Boolean))).map(
-                (branch) => ({ value: branch, label: branch }),
-            ),
+            Array.from(new Set(data.map((item) => item.branch).filter(Boolean))).map((branch) => ({
+                value: branch,
+                label: branch,
+            })),
         [data],
     );
 
@@ -213,13 +290,20 @@ export default function UsersPage() {
                 return false;
             }
 
-            if (branchFilter && user.branch !== branchFilter) return false;
-            if (roleFilter && !user.roles.includes(roleFilter as RoleCode)) return false;
-            if (statusFilter && user.status !== statusFilter) return false;
+            if (appliedFilters.branch.length && !appliedFilters.branch.includes(user.branch)) return false;
+            if (
+                appliedFilters.role.length &&
+                !user.roles.some((role) => appliedFilters.role.includes(role))
+            )
+                return false;
+            if (appliedFilters.status.length && !appliedFilters.status.includes(user.status)) return false;
 
             return true;
         });
-    }, [data, search, branchFilter, roleFilter, statusFilter]);
+    }, [data, search, appliedFilters]);
+
+    const activeFilterCount =
+        appliedFilters.branch.length + appliedFilters.role.length + appliedFilters.status.length;
 
     const clearSelection = () => {
         setSelectedRowKeys([]);
@@ -259,6 +343,11 @@ export default function UsersPage() {
         setDetailOpen(true);
     };
 
+    const openFilterDrawer = () => {
+        setDraftFilters(appliedFilters);
+        setFilterDrawerOpen(true);
+    };
+
     const handleSave = async () => {
         try {
             const values = await form.validateFields();
@@ -278,9 +367,7 @@ export default function UsersPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-
                 if (!response.ok) throw new Error();
-
                 message.success('User updated successfully');
             } else {
                 const response = await fetch('/api/users', {
@@ -288,9 +375,7 @@ export default function UsersPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ...payload, status: payload.status ?? 'active' }),
                 });
-
                 if (!response.ok) throw new Error();
-
                 message.success('User created successfully');
             }
 
@@ -309,7 +394,6 @@ export default function UsersPage() {
         void (async () => {
             try {
                 const response = await fetch(`/api/users/${id}`, { method: 'DELETE' });
-
                 if (!response.ok) throw new Error();
 
                 message.success('User deleted successfully');
@@ -321,44 +405,38 @@ export default function UsersPage() {
         })();
     };
 
-    const toggleStatus = async (record: UserTableRecord) => {
-        try {
-            const response = await fetch(`/api/users/${record.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    status: record.status === 'active' ? 'inactive' : 'active',
-                }),
-            });
-
-            if (!response.ok) throw new Error();
-
-            message.success('User updated successfully');
-            await loadUsers();
-        } catch {
-            message.error('Failed to update user');
-        }
+    const requestStatusChange = (records: UserTableRecord[], action: 'activate' | 'deactivate') => {
+        if (!records.length) return;
+        setStatusModal({ action, records });
     };
 
-    const handleBulkToggleStatus = async () => {
+    const confirmStatusChange = async () => {
+        if (!statusModal) return;
+
         try {
+            setStatusSubmitting(true);
+            const nextStatus = statusModal.action === 'activate' ? 'active' : 'inactive';
+
             await Promise.all(
-                selectedRows.map((row) =>
+                statusModal.records.map((row) =>
                     fetch(`/api/users/${row.id}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            status: row.status === 'active' ? 'inactive' : 'active',
-                        }),
+                        body: JSON.stringify({ status: nextStatus }),
                     }),
                 ),
             );
 
-            message.success('Users updated successfully');
+            message.success(
+                statusModal.action === 'activate' ? 'User(s) activated successfully' : 'User(s) deactivated successfully',
+            );
+            setStatusModal(null);
             clearSelection();
             await loadUsers();
         } catch {
-            message.error('Failed to update users');
+            message.error('Failed to update user status');
+        } finally {
+            setStatusSubmitting(false);
         }
     };
 
@@ -370,12 +448,7 @@ export default function UsersPage() {
             okButtonProps: { danger: true },
             async onOk() {
                 try {
-                    await Promise.all(
-                        selectedRows.map((row) =>
-                            fetch(`/api/users/${row.id}`, { method: 'DELETE' }),
-                        ),
-                    );
-
+                    await Promise.all(selectedRows.map((row) => fetch(`/api/users/${row.id}`, { method: 'DELETE' })));
                     message.success('Users deleted successfully');
                     clearSelection();
                     await loadUsers();
@@ -386,15 +459,19 @@ export default function UsersPage() {
         });
     };
 
-    const selectionActions = (
-        <Space>
-            <Button
-                icon={<EyeOutlined />}
-                disabled={selectedRows.length !== 1}
-                onClick={() => selectedRows[0] && openDetail(selectedRows[0])}
-            >
-                View
-            </Button>
+    const handleExport = () => {
+        // TODO: wire up to a real export endpoint (e.g. /api/users/export).
+        message.info(`Exporting ${selectedRows.length || filteredData.length} user(s)...`);
+    };
+
+    const handleImport = () => {
+        // TODO: wire up to a real import flow (file picker + /api/users/import).
+        message.info('Import coming soon');
+    };
+
+    // Toolbar strip pinned above the table, matching the reference design.
+    const toolbar = (
+        <>
             <Button
                 icon={<EditOutlined />}
                 disabled={selectedRows.length !== 1}
@@ -402,90 +479,130 @@ export default function UsersPage() {
             >
                 Edit
             </Button>
-            <Button icon={<StopOutlined />} onClick={handleBulkToggleStatus}>
-                Toggle status
+            <Button
+                icon={<CheckCircleFilled />}
+                disabled={selectedRows.length === 0}
+                onClick={() => requestStatusChange(selectedRows, 'activate')}
+            >
+                Activate
             </Button>
-            <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
-                Delete
+            <Button
+                icon={<StopOutlined />}
+                disabled={selectedRows.length === 0}
+                onClick={() => requestStatusChange(selectedRows, 'deactivate')}
+            >
+                Deactivate
             </Button>
-        </Space>
+            <Button icon={<DownloadOutlined />} disabled={selectedRows.length === 0} onClick={handleExport}>
+                Export
+            </Button>
+            {selectedRows.length > 0 && (
+                <>
+                    <Divider type="vertical" />
+                    <Button danger type="text" icon={<DeleteOutlined />} onClick={handleBulkDelete}>
+                        Delete
+                    </Button>
+                </>
+            )}
+        </>
     );
 
     const columns = [
         {
-            title: 'User',
-            dataIndex: 'name',
-            width: 280,
+            title: 'User Name',
+            dataIndex: 'fullName',
+            width: 240,
+            sorter: (a: UserTableRecord, b: UserTableRecord) => a.fullName.localeCompare(b.fullName),
             render: (_: string, record: UserTableRecord) => (
-                <Flex align="center" gap={12}>
-                    <Avatar
-                        size={36}
-                        style={{ backgroundColor: avatarColor(record.fullName), flexShrink: 0 }}
-                    >
+                <Flex align="center" gap={10}>
+                    <Avatar size={32} style={{ backgroundColor: avatarColor(record.fullName), flexShrink: 0 }}>
                         {initials(record.fullName) || <UserOutlined />}
                     </Avatar>
-                    <Flex vertical gap={2}>
-                        <Text strong>{record.fullName}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            {record.email}
-                        </Text>
-                    </Flex>
+                    <Typography.Link
+                        onClick={() => openDetail(record)}
+                        style={{ fontWeight: 500 }}
+                    >
+                        {record.fullName}
+                    </Typography.Link>
                 </Flex>
             ),
         },
         {
-            title: 'Roles',
-            dataIndex: 'roles',
+            title: 'Login ID',
+            dataIndex: 'email',
             width: 200,
-            render: (value: RoleCode[]) => (
-                <Space size={4} wrap>
-                    {value.map((role) => (
-                        <Tag key={role} color={ROLE_COLORS[role]} bordered={false}>
-                            {role}
-                        </Tag>
-                    ))}
-                </Space>
+            sorter: (a: UserTableRecord, b: UserTableRecord) => a.email.localeCompare(b.email),
+            render: (_: string, record: UserTableRecord) => (
+                <Text type="secondary">{getDisplayField(record, 'loginId')}</Text>
             ),
         },
         {
-            title: 'Branch',
-            dataIndex: 'branch',
-            width: 180,
-            render: (value: string) => value || <Text type="secondary">—</Text>,
-        },
-        {
-            title: 'Birth date',
-            dataIndex: 'birthDate',
-            width: 140,
-            render: (value: string | null) => value ?? <Text type="secondary">—</Text>,
-        },
-        {
-            title: 'Status',
-            dataIndex: 'status',
+            title: 'MER',
+            dataIndex: 'mer',
             width: 120,
-            render: (value: string) => (
-                <Tag color={STATUS_COLORS[value] ?? 'default'} bordered={false}>
-                    {value}
-                </Tag>
+            render: (_: string, record: UserTableRecord) => (
+                <Text type="secondary">{getDisplayField(record, 'mer')}</Text>
             ),
+        },
+        {
+            title: 'System Role',
+            dataIndex: 'roles',
+            width: 140,
+            render: (value: RoleCode[]) => <Text>{roleLabel(value)}</Text>,
+        },
+        {
+            title: 'Business Role',
+            dataIndex: 'businessRole',
+            width: 140,
+            render: (_: string, record: UserTableRecord) => (
+                <Text>{getDisplayField(record, 'businessRole')}</Text>
+            ),
+        },
+        {
+            title: 'Division',
+            dataIndex: 'division',
+            width: 150,
+            render: (_: string, record: UserTableRecord) => <Text>{getDisplayField(record, 'division')}</Text>,
+        },
+        {
+            title: 'Department',
+            dataIndex: 'department',
+            width: 150,
+            render: (_: string, record: UserTableRecord) => <Text>{getDisplayField(record, 'department')}</Text>,
+        },
+        {
+            title: 'Account Status',
+            dataIndex: 'status',
+            width: 140,
+            render: (value: string) =>
+                value === 'active' ? (
+                    <Flex align="center" gap={6}>
+                        <CheckCircleFilled style={{ color: '#22C55E', fontSize: 13 }} />
+                        <Text style={{ color: '#22C55E' }}>Active</Text>
+                    </Flex>
+                ) : value === 'inactive' ? (
+                    <Flex align="center" gap={6}>
+                        <MinusCircleFilled style={{ color: '#EF4444', fontSize: 13 }} />
+                        <Text style={{ color: '#EF4444' }}>Inactive</Text>
+                    </Flex>
+                ) : (
+                    <Flex align="center" gap={6}>
+                        <MinusCircleFilled style={{ color: '#F59E0B', fontSize: 13 }} />
+                        <Text style={{ color: '#F59E0B' }}>Pending</Text>
+                    </Flex>
+                ),
         },
     ];
 
     if (!currentUserRoles.includes('ADMIN')) {
-        return (
-            <Result
-                status="403"
-                title="403"
-                subTitle="You do not have permission to access this page."
-            />
-        );
+        return <Result status="403" title="403" subTitle="You do not have permission to access this page." />;
     }
 
     return (
         <>
             <DataPage<UserTableRecord>
-                title="Users"
-                subtitle="Manage system users"
+                title="User Management"
+                subtitle={lastLoadedAt ? `Last refreshed ${lastLoadedAt.toLocaleString()}` : undefined}
                 breadcrumbs={['Administration', 'Users']}
                 loading={loading}
                 columns={columns}
@@ -497,77 +614,138 @@ export default function UsersPage() {
                 selectable
                 selectedRowKeys={selectedRowKeys}
                 onSelectedRowKeysChange={handleSelectionChange}
-                selectionActions={selectionActions}
-                selectionLabel="user"
+                toolbar={toolbar}
+                selectionLabel="record"
                 actions={
                     <Space>
-                        <Button
-                            icon={<FilterOutlined />}
-                            onClick={() => setFilterDrawerOpen(true)}
-                        >
-                            Filters
+                        <Badge count={activeFilterCount} size="small" offset={[-4, 4]}>
+                            <Button icon={<FilterOutlined />} onClick={openFilterDrawer}>
+                                Filters
+                            </Button>
+                        </Badge>
+                        <Button icon={<UploadOutlined />} onClick={handleImport}>
+                            Import
                         </Button>
                         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
                             New user
                         </Button>
+                        <Dropdown
+                            menu={{
+                                items: [
+                                    { key: 'export', label: 'Export all', icon: <DownloadOutlined /> },
+                                ],
+                                onClick: ({ key }) => {
+                                    if (key === 'export') handleExport();
+                                },
+                            }}
+                        >
+                            <Button icon={<EllipsisOutlined />} />
+                        </Dropdown>
                     </Space>
                 }
-                tableProps={{
-                    size: 'middle',
-                    sticky: true,
-                    scroll: { x: 1200 },
-                }}
+                tableProps={{ size: 'middle', sticky: true, scroll: { x: 1400 } }}
             />
 
-            {/* Filter Drawer */}
+            {/* Filter Drawer — collapsible checkbox sections, matching the reference design */}
             <Drawer
-                title="Filters"
+                title="Filter"
                 placement="right"
                 open={filterDrawerOpen}
                 onClose={() => setFilterDrawerOpen(false)}
                 width={360}
                 destroyOnClose
                 footer={
-                    <Button onClick={() => setFilterDrawerOpen(false)} block>
-                        Close
-                    </Button>
+                    <Flex gap={12}>
+                        <Button
+                            block
+                            onClick={() => {
+                                setDraftFilters(EMPTY_FILTERS);
+                            }}
+                        >
+                            Clear All
+                        </Button>
+                        <Button
+                            block
+                            type="primary"
+                            onClick={() => {
+                                setAppliedFilters(draftFilters);
+                                setFilterDrawerOpen(false);
+                            }}
+                        >
+                            Apply
+                        </Button>
+                    </Flex>
                 }
             >
-                <Flex vertical gap={16}>
-                    <Select
-                        allowClear
-                        placeholder="Branch"
-                        style={{ width: '100%' }}
-                        options={branchFilterOptions}
-                        onChange={setBranchFilter}
-                        value={branchFilter}
-                    />
-                    <Select
-                        allowClear
-                        placeholder="Role"
-                        style={{ width: '100%' }}
-                        onChange={setRoleFilter}
-                        options={ROLE_OPTIONS}
-                        value={roleFilter}
-                    />
-                    <Select
-                        allowClear
-                        placeholder="Status"
-                        style={{ width: '100%' }}
-                        onChange={setStatusFilter}
-                        options={STATUS_OPTIONS}
-                        value={statusFilter}
-                    />
-                    <Button
-                        onClick={() => {
-                            setBranchFilter(undefined);
-                            setRoleFilter(undefined);
-                            setStatusFilter(undefined);
-                        }}
-                    >
-                        Reset filters
-                    </Button>
-                </Flex>
+                <Collapse
+                    ghost
+                    defaultActiveKey={['branch']}
+                    items={[
+                        {
+                            key: 'branch',
+                            label: (
+                                <Flex align="center" gap={8}>
+                                    <Text strong>Branch</Text>
+                                    {draftFilters.branch.length > 0 && (
+                                        <Tag color="purple" bordered={false}>
+                                            {draftFilters.branch.length} Selected
+                                        </Tag>
+                                    )}
+                                </Flex>
+                            ),
+                            children: (
+                                <FilterSection
+                                    title="Branch"
+                                    options={branchFilterOptions}
+                                    selected={draftFilters.branch}
+                                    onChange={(values) => setDraftFilters((f) => ({ ...f, branch: values }))}
+                                />
+                            ),
+                        },
+                        {
+                            key: 'role',
+                            label: (
+                                <Flex align="center" gap={8}>
+                                    <Text strong>Role</Text>
+                                    {draftFilters.role.length > 0 && (
+                                        <Tag color="purple" bordered={false}>
+                                            {draftFilters.role.length} Selected
+                                        </Tag>
+                                    )}
+                                </Flex>
+                            ),
+                            children: (
+                                <FilterSection
+                                    title="Role"
+                                    options={ROLE_OPTIONS}
+                                    selected={draftFilters.role}
+                                    onChange={(values) => setDraftFilters((f) => ({ ...f, role: values }))}
+                                />
+                            ),
+                        },
+                        {
+                            key: 'status',
+                            label: (
+                                <Flex align="center" gap={8}>
+                                    <Text strong>Status</Text>
+                                    {draftFilters.status.length > 0 && (
+                                        <Tag color="purple" bordered={false}>
+                                            {draftFilters.status.length} Selected
+                                        </Tag>
+                                    )}
+                                </Flex>
+                            ),
+                            children: (
+                                <FilterSection
+                                    title="Status"
+                                    options={STATUS_OPTIONS}
+                                    selected={draftFilters.status}
+                                    onChange={(values) => setDraftFilters((f) => ({ ...f, status: values }))}
+                                />
+                            ),
+                        },
+                    ]}
+                />
             </Drawer>
 
             {/* Create / Edit modal */}
@@ -585,18 +763,10 @@ export default function UsersPage() {
                     <Form.Item name="name" label="Full name" rules={[{ required: true }]}>
                         <Input placeholder="Jane Doe" />
                     </Form.Item>
-                    <Form.Item
-                        name="email"
-                        label="Email"
-                        rules={[{ required: true, type: 'email' }]}
-                    >
+                    <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
                         <Input placeholder="jane@example.com" />
                     </Form.Item>
-                    <Form.Item
-                        name="branchId"
-                        label="Branch"
-                        rules={[{ required: true, message: 'Branch is required' }]}
-                    >
+                    <Form.Item name="branchId" label="Branch" rules={[{ required: true, message: 'Branch is required' }]}>
                         <Select
                             loading={branchLoading}
                             placeholder="Select branch"
@@ -605,11 +775,7 @@ export default function UsersPage() {
                             optionFilterProp="label"
                         />
                     </Form.Item>
-                    <Form.Item
-                        name="roles"
-                        label="Roles"
-                        rules={[{ required: true, message: 'At least one role is required' }]}
-                    >
+                    <Form.Item name="roles" label="Roles" rules={[{ required: true, message: 'At least one role is required' }]}>
                         <Select mode="multiple" placeholder="Select roles" options={ROLE_OPTIONS} />
                     </Form.Item>
                     <Form.Item
@@ -623,6 +789,62 @@ export default function UsersPage() {
                 </Form>
             </Modal>
 
+            {/* Activate / Deactivate confirmation — matches the reference warning modal */}
+            <Modal
+                open={!!statusModal}
+                onCancel={() => setStatusModal(null)}
+                footer={null}
+                width={420}
+                destroyOnClose
+                closable={false}
+            >
+                {statusModal && (
+                    <Flex vertical gap={16}>
+                        <WarningFilled style={{ color: '#F59E0B', fontSize: 28 }} />
+
+                        <Flex vertical gap={8}>
+                            <Text strong style={{ fontSize: 16 }}>
+                                {statusModal.action === 'activate' ? 'Activate User' : 'Deactivate User'}
+                            </Text>
+                            <Text type="secondary">
+                                You are about to {statusModal.action}{' '}
+                                {statusModal.records.length > 1
+                                    ? `${statusModal.records.length} user accounts.`
+                                    : 'this user account.'}
+                            </Text>
+                            <Text type="secondary" style={{ marginTop: 4 }}>
+                                After {statusModal.action === 'activate' ? 'activation' : 'deactivation'}:
+                            </Text>
+                            <ul style={{ margin: 0, paddingLeft: 20, color: 'rgba(0,0,0,0.45)' }}>
+                                <li>
+                                    {statusModal.action === 'activate'
+                                        ? 'The user will regain access to the system.'
+                                        : 'The user will no longer be able to access the system.'}
+                                </li>
+                                <li>You can change this again at any time.</li>
+                            </ul>
+                        </Flex>
+
+                        <Flex gap={12} justify="flex-end">
+                            <Button onClick={() => setStatusModal(null)}>Cancel</Button>
+                            <Button
+                                danger={statusModal.action === 'deactivate'}
+                                type="primary"
+                                loading={statusSubmitting}
+                                onClick={confirmStatusChange}
+                                style={
+                                    statusModal.action === 'activate'
+                                        ? { backgroundColor: '#22C55E', borderColor: '#22C55E' }
+                                        : undefined
+                                }
+                            >
+                                {statusModal.action === 'activate' ? 'Activate' : 'Deactivate'}
+                            </Button>
+                        </Flex>
+                    </Flex>
+                )}
+            </Modal>
+
             {/* Detail Drawer */}
             <Drawer
                 open={detailOpen}
@@ -630,10 +852,7 @@ export default function UsersPage() {
                 size="large"
                 title={
                     <Flex align="center" gap={12}>
-                        <Avatar
-                            size={48}
-                            style={{ backgroundColor: avatarColor(detailRecord?.fullName || '') }}
-                        >
+                        <Avatar size={48} style={{ backgroundColor: avatarColor(detailRecord?.fullName || '') }}>
                             {detailRecord ? initials(detailRecord.fullName) || <UserOutlined /> : <UserOutlined />}
                         </Avatar>
                         <Space direction="vertical" size={0}>
@@ -641,9 +860,16 @@ export default function UsersPage() {
                                 {detailRecord?.fullName || 'User details'}
                             </Text>
                             {detailRecord && (
-                                <Tag color={STATUS_COLORS[detailRecord.status] ?? 'default'}>
-                                    {detailRecord.status}
-                                </Tag>
+                                <Flex align="center" gap={6}>
+                                    {detailRecord.status === 'active' ? (
+                                        <CheckCircleFilled style={{ color: '#22C55E', fontSize: 12 }} />
+                                    ) : (
+                                        <MinusCircleFilled style={{ color: '#EF4444', fontSize: 12 }} />
+                                    )}
+                                    <Text type="secondary" style={{ textTransform: 'capitalize' }}>
+                                        {detailRecord.status}
+                                    </Text>
+                                </Flex>
                             )}
                         </Space>
                     </Flex>
@@ -654,9 +880,12 @@ export default function UsersPage() {
                             <Space>
                                 <Button
                                     icon={<StopOutlined />}
-                                    onClick={() => {
-                                        void toggleStatus(detailRecord);
-                                    }}
+                                    onClick={() =>
+                                        requestStatusChange(
+                                            [detailRecord],
+                                            detailRecord.status === 'active' ? 'deactivate' : 'activate',
+                                        )
+                                    }
                                 >
                                     {detailRecord.status === 'active' ? 'Deactivate' : 'Activate'}
                                 </Button>
@@ -699,9 +928,7 @@ export default function UsersPage() {
                 {detailRecord ? (
                     <Flex vertical gap={24}>
                         <Descriptions column={2} size="middle" bordered={false}>
-                            <Descriptions.Item label={<><MailOutlined /> Email</>}>
-                                {detailRecord.email}
-                            </Descriptions.Item>
+                            <Descriptions.Item label={<><MailOutlined /> Email</>}>{detailRecord.email}</Descriptions.Item>
                             <Descriptions.Item label={<><ApartmentOutlined /> Branch</>}>
                                 {detailRecord.branch || '—'}
                             </Descriptions.Item>
@@ -716,12 +943,14 @@ export default function UsersPage() {
                         </Descriptions>
 
                         <Flex vertical gap={8}>
-                            <Text strong style={{ fontSize: 16 }}>Roles</Text>
+                            <Text strong style={{ fontSize: 16 }}>
+                                Roles
+                            </Text>
                             <Divider style={{ margin: 0 }} />
                         </Flex>
                         <Space size={8} wrap>
                             {detailRecord.roles.map((role) => (
-                                <Tag key={role} color={ROLE_COLORS[role]} bordered={false} style={{ fontSize: 14 }}>
+                                <Tag key={role} bordered={false} style={{ fontSize: 14 }}>
                                     {role}
                                 </Tag>
                             ))}
