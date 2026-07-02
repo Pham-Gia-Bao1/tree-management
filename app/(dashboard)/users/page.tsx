@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Key } from 'react';
 import {
     App,
     Avatar,
     Breadcrumb,
     Button,
+    Descriptions,
+    Drawer,
     Form,
     Input,
     Modal,
@@ -70,6 +72,15 @@ export default function UsersPage() {
     const [open, setOpen] = useState(false);
 
     const [form] = Form.useForm();
+
+    // --- Row selection state ---
+    const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+    const [selectedRows, setSelectedRows] = useState<UserTableRecord[]>([]);
+
+    // --- Detail drawer state ---
+    const [detailRecord, setDetailRecord] =
+        useState<UserTableRecord | null>(null);
+    const [detailOpen, setDetailOpen] = useState(false);
 
     const loadUsers = async () => {
         try {
@@ -207,6 +218,11 @@ export default function UsersPage() {
         setOpen(true);
     };
 
+    const openDetail = (record: UserTableRecord) => {
+        setDetailRecord(record);
+        setDetailOpen(true);
+    };
+
     const handleSave = async () => {
         try {
             const values = await form.validateFields();
@@ -315,6 +331,116 @@ export default function UsersPage() {
         }
     };
 
+    // --- Selection helpers ---
+    const clearSelection = () => {
+        setSelectedRowKeys([]);
+        setSelectedRows([]);
+    };
+
+    const handleSelectionChange = (
+        keys: Key[],
+        rows: UserTableRecord[],
+    ) => {
+        setSelectedRowKeys(keys);
+        setSelectedRows(rows);
+    };
+
+    const handleBulkToggleStatus = async () => {
+        try {
+            await Promise.all(
+                selectedRows.map((row) =>
+                    fetch(`/api/users/${row.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            status:
+                                row.status === 'active'
+                                    ? 'inactive'
+                                    : 'active',
+                        }),
+                    }),
+                ),
+            );
+
+            message.success('Users updated successfully');
+
+            clearSelection();
+
+            await loadUsers();
+        } catch {
+            message.error('Failed to update users');
+        }
+    };
+
+    const handleBulkDelete = () => {
+        modal.confirm({
+            title: `Delete ${selectedRows.length} user(s)?`,
+            content: 'This action cannot be undone.',
+            okButtonProps: {
+                danger: true,
+            },
+            async onOk() {
+                try {
+                    await Promise.all(
+                        selectedRows.map((row) =>
+                            fetch(`/api/users/${row.id}`, {
+                                method: 'DELETE',
+                            }),
+                        ),
+                    );
+
+                    message.success('Users deleted successfully');
+
+                    clearSelection();
+
+                    await loadUsers();
+                } catch {
+                    message.error('Failed to delete users');
+                }
+            },
+        });
+    };
+
+    const selectionActions = (
+        <>
+            <Button
+                icon={<EyeOutlined />}
+                disabled={selectedRows.length !== 1}
+                onClick={() =>
+                    selectedRows[0] && openDetail(selectedRows[0])
+                }
+            >
+                View
+            </Button>
+
+            <Button
+                icon={<EditOutlined />}
+                disabled={selectedRows.length !== 1}
+                onClick={() =>
+                    selectedRows[0] && openEdit(selectedRows[0])
+                }
+            >
+                Edit
+            </Button>
+
+            <Button icon={<StopOutlined />} onClick={handleBulkToggleStatus}>
+                Toggle Status
+            </Button>
+
+            <Button
+                danger
+                icon={<DeleteOutlined />}
+                onClick={handleBulkDelete}
+            >
+                Delete
+            </Button>
+
+            <Button onClick={clearSelection}>Cancel</Button>
+        </>
+    );
+
     const columns = [
         {
             title: 'User',
@@ -371,7 +497,11 @@ export default function UsersPage() {
             align: 'right' as const,
             render: (_: unknown, record: UserTableRecord) => (
                 <Space size={4}>
-                    <Button size="small" icon={<EyeOutlined />} />
+                    <Button
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => openDetail(record)}
+                    />
 
                     <Button
                         size="small"
@@ -408,7 +538,6 @@ export default function UsersPage() {
 
     return (
         <>
-           
     
 <DataPage<UserTableRecord>
     title="Users"
@@ -421,6 +550,10 @@ export default function UsersPage() {
     searchable
     searchPlaceholder="Search users..."
     onSearch={setSearch}
+    selectable
+    selectedRowKeys={selectedRowKeys}
+    onSelectedRowKeysChange={handleSelectionChange}
+    selectionActions={selectionActions}
     actions={
         <Button
             type="primary"
@@ -590,6 +723,83 @@ export default function UsersPage() {
     </Form>
 </Modal>
 
+<Drawer
+    open={detailOpen}
+    width={420}
+    title="User Details"
+    onClose={() => setDetailOpen(false)}
+    extra={
+        detailRecord && (
+            <Button
+                icon={<EditOutlined />}
+                onClick={() => {
+                    setDetailOpen(false);
+                    void openEdit(detailRecord);
+                }}
+            >
+                Edit
+            </Button>
+        )
+    }
+>
+    {detailRecord && (
+        <>
+            <div className="flex items-center gap-3 mb-6">
+                <Avatar size={48} icon={<UserOutlined />} />
+                <div>
+                    <div className="text-base font-medium">
+                        {detailRecord.fullName}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                        {detailRecord.email}
+                    </div>
+                </div>
+            </div>
+
+            <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="Full Name">
+                    {detailRecord.fullName}
+                </Descriptions.Item>
+
+                <Descriptions.Item label="Email">
+                    {detailRecord.email}
+                </Descriptions.Item>
+
+                <Descriptions.Item label="Roles">
+                    <Space size={4} wrap>
+                        {detailRecord.roles.map((role) => (
+                            <Tag key={role}>{role}</Tag>
+                        ))}
+                    </Space>
+                </Descriptions.Item>
+
+                <Descriptions.Item label="Branch">
+                    {detailRecord.branch || '-'}
+                </Descriptions.Item>
+
+                <Descriptions.Item label="Status">
+                    <Tag
+                        color={
+                            detailRecord.status === 'active'
+                                ? 'success'
+                                : 'default'
+                        }
+                    >
+                        {detailRecord.status}
+                    </Tag>
+                </Descriptions.Item>
+
+                <Descriptions.Item label="Birth Date">
+                    {detailRecord.birthDate ?? '-'}
+                </Descriptions.Item>
+
+                <Descriptions.Item label="User ID">
+                    {detailRecord.id}
+                </Descriptions.Item>
+            </Descriptions>
+        </>
+    )}
+</Drawer>
 
         </>
     );
