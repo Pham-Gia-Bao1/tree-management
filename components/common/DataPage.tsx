@@ -3,27 +3,22 @@
 import { ReactNode, type Key } from 'react';
 
 import {
+    Alert,
     Breadcrumb,
     Button,
     Card,
     Empty,
+    Flex,
     Input,
     Skeleton,
     Space,
-    Spin,
     Table,
     Typography,
 } from 'antd';
 
-import {
-    ReloadOutlined,
-    SearchOutlined,
-} from '@ant-design/icons';
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 
-import type {
-    ColumnsType,
-    TableProps,
-} from 'antd/es/table';
+import type { ColumnsType, TableProps } from 'antd/es/table';
 
 const { Title, Text } = Typography;
 
@@ -51,13 +46,15 @@ interface DataPageProps<T> {
 
     tableProps?: TableProps<T>;
 
-    // --- Row selection support ---
+    /** Enables the checkbox column and the selection toolbar. */
     selectable?: boolean;
     selectedRowKeys?: Key[];
     onSelectedRowKeysChange?: (keys: Key[], rows: T[]) => void;
-    /** Buttons/content shown in the toolbar above the table once at least one row is selected */
+    /** Buttons rendered in the selection banner once at least one row is checked. */
     selectionActions?: ReactNode;
-    /** Escape hatch to fully override the computed rowSelection config */
+    /** Noun used in the selection banner, e.g. "user" -> "3 users selected". */
+    selectionLabel?: string;
+    /** Escape hatch to fully override the computed rowSelection config. */
     rowSelection?: TableProps<T>['rowSelection'];
 }
 
@@ -89,6 +86,7 @@ export default function DataPage<T extends object>({
     selectedRowKeys,
     onSelectedRowKeysChange,
     selectionActions,
+    selectionLabel = 'item',
     rowSelection: rowSelectionProp,
 }: DataPageProps<T>) {
     const resolvedRowSelection: TableProps<T>['rowSelection'] | undefined =
@@ -101,253 +99,153 @@ export default function DataPage<T extends object>({
               }
             : rowSelectionProp;
 
-    const hasSelection = Boolean(
-        selectable && selectedRowKeys && selectedRowKeys.length > 0,
-    );
+    const selectionCount = selectedRowKeys?.length ?? 0;
+    const hasSelection = selectable && selectionCount > 0;
 
     return (
-        
-            <div className="space-y-4">
-                {/* Breadcrumb */}
-                {breadcrumbs && (
-                    <Breadcrumb
-                        separator={
-                            <span
-                                style={{
-                                    color: '#9CA3AF',
-                                    fontSize: 12,
-                                }}
-                            >
-                                /
-                            </span>
-                        }
-                        items={breadcrumbs.map(
-                            (item, index) => {
-                                const isLast =
-                                    index ===
-                                    breadcrumbs.length - 1;
+        <div className="space-y-4">
+            {/* Breadcrumb */}
+            {breadcrumbs && (
+                <Breadcrumb
+                    separator={
+                        <span style={{ color: 'rgba(0,0,0,0.35)', fontSize: 12 }}>
+                            /
+                        </span>
+                    }
+                    items={breadcrumbs.map((item, index) => {
+                        const isLast = index === breadcrumbs.length - 1;
 
-                                return {
-                                    title: (
-                                        <span
-                                            style={{
-                                                color: isLast
-                                                    ? '#111827'
-                                                    : '#6B7280',
-                                                fontWeight:
-                                                    isLast
-                                                        ? 600
-                                                        : 500,
-                                                fontSize: 14,
-                                                cursor:
-                                                    isLast
-                                                        ? 'default'
-                                                        : 'pointer',
-                                                transition:
-                                                    'all .2s ease',
-                                            }}
-                                            onMouseEnter={(
-                                                e,
-                                            ) => {
-                                                if (
-                                                    !isLast
-                                                ) {
-                                                    e.currentTarget.style.color =
-                                                        '#166534';
-                                                }
-                                            }}
-                                            onMouseLeave={(
-                                                e,
-                                            ) => {
-                                                if (
-                                                    !isLast
-                                                ) {
-                                                    e.currentTarget.style.color =
-                                                        '#6B7280';
-                                                }
-                                            }}
-                                        >
-                                            {item}
-                                        </span>
-                                    ),
-                                };
-                            },
-                        )}
-                    />
-                )}
-
-                {/* Header */}
-                <div className="flex items-center justify-between gap-4">
-                    <div>
-                        {loading &&
-                        dataSource.length === 0 ? (
-                            <>
-                                <Skeleton.Input
-                                    active
+                        return {
+                            title: (
+                                <Text
+                                    type={isLast ? undefined : 'secondary'}
+                                    strong={isLast}
                                     style={{
-                                        width: 280,
-                                        height: 32,
-                                    }}
-                                />
-
-                                {subtitle && (
-                                    <div
-                                        style={{
-                                            marginTop: 8,
-                                        }}
-                                    >
-                                        <Skeleton.Input
-                                            active
-                                            size="small"
-                                            style={{
-                                                width: 360,
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                                <Title
-                                    level={3}
-                                    style={{
-                                        marginBottom: 0,
+                                        fontSize: 13,
+                                        cursor: isLast ? 'default' : 'pointer',
                                     }}
                                 >
-                                    {title}
-                                </Title>
+                                    {item}
+                                </Text>
+                            ),
+                        };
+                    })}
+                />
+            )}
 
-                                {subtitle && (
-                                    <Text type="secondary">
-                                        {subtitle}
-                                    </Text>
-                                )}
-                            </>
-                        )}
-                    </div>
+            {/* Header */}
+            <Flex align="center" justify="space-between" gap={16} wrap="wrap">
+                <div>
+                    {loading && dataSource.length === 0 ? (
+                        <>
+                            <Skeleton.Input active style={{ width: 240, height: 30 }} />
 
-                    <Space>{actions}</Space>
+                            {subtitle && (
+                                <div style={{ marginTop: 8 }}>
+                                    <Skeleton.Input active size="small" style={{ width: 320 }} />
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <Title level={3} style={{ marginBottom: 2 }}>
+                                {title}
+                            </Title>
+
+                            {subtitle && <Text type="secondary">{subtitle}</Text>}
+                        </>
+                    )}
                 </div>
 
-                {/* Filters */}
-                {(filters || searchable) && (
-                    <Card>
-                        <div className="flex flex-wrap justify-between gap-4">
-                            <Space>
-                                {searchable && (
-                                    <Input.Search
-                                        allowClear
-                                        disabled={loading}
-                                        prefix={
-                                            <SearchOutlined />
-                                        }
-                                        placeholder={
-                                            searchPlaceholder
-                                        }
-                                        style={{
-                                            width: 280,
-                                        }}
-                                        onSearch={
-                                            onSearch
-                                        }
-                                    />
-                                )}
+                <Space wrap>{actions}</Space>
+            </Flex>
 
-                                {onRefresh && (
-                                    <Button
-                                        icon={
-                                            <ReloadOutlined />
-                                        }
-                                        loading={
-                                            refreshing
-                                        }
-                                        disabled={
-                                            loading
-                                        }
-                                        onClick={
-                                            onRefresh
-                                        }
-                                    >
-                                        Refresh
-                                    </Button>
-                                )}
-                            </Space>
+            {/* Filters */}
+            {(filters || searchable) && (
+                <Card size="small">
+                    <Flex align="center" justify="space-between" gap={12} wrap="wrap">
+                        <Space wrap>
+                            {searchable && (
+                                <Input.Search
+                                    allowClear
+                                    disabled={loading}
+                                    prefix={<SearchOutlined style={{ color: 'rgba(0,0,0,0.3)' }} />}
+                                    placeholder={searchPlaceholder}
+                                    style={{ width: 260 }}
+                                    onSearch={onSearch}
+                                />
+                            )}
 
-                            <Space wrap>
-                                {filters}
-                            </Space>
-                        </div>
-                    </Card>
-                )}
+                            {onRefresh && (
+                                <Button
+                                    icon={<ReloadOutlined />}
+                                    loading={refreshing}
+                                    disabled={loading}
+                                    onClick={onRefresh}
+                                >
+                                    Refresh
+                                </Button>
+                            )}
+                        </Space>
 
-                {/* Selection toolbar - shown above the table when rows are checked */}
-                {hasSelection && (
-                    <Card
-                        styles={{ body: { padding: 12 } }}
-                        style={{
-                            background: '#F0FDF4',
-                            borderColor: '#BBF7D0',
-                        }}
-                    >
-                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                        {filters && <Space wrap>{filters}</Space>}
+                    </Flex>
+                </Card>
+            )}
+
+            {/* Selection banner - appears above the table once rows are checked */}
+            {hasSelection && (
+                <Alert
+                    type="info"
+                    showIcon
+                    closable
+                    onClose={() => onSelectedRowKeysChange?.([], [])}
+                    message={
+                        <Flex align="center" justify="space-between" gap={12} wrap="wrap">
                             <Text strong>
-                                {selectedRowKeys?.length} selected
+                                {selectionCount} {selectionLabel}
+                                {selectionCount > 1 ? 's' : ''} selected
                             </Text>
 
-                            <Space wrap>{selectionActions}</Space>
-                        </div>
-                    </Card>
-                )}
+                            <Space size={8} wrap>
+                                {selectionActions}
+                            </Space>
+                        </Flex>
+                    }
+                />
+            )}
 
-                {/* Table */}
-                <Card
-                    styles={{
-                        body: {
-                            padding: 0,
-                            overflow: 'hidden',
-                        },
-                    }}
-                >
-                    <div
-                        style={{
-                            width: '100%',
-                            overflowX: 'auto',
+            {/* Table */}
+            <Card styles={{ body: { padding: 0, overflow: 'hidden' } }}>
+                <div style={{ width: '100%', overflowX: 'auto' }}>
+                    <Table<T>
+                        rowKey={rowKey}
+                        columns={columns}
+                        dataSource={dataSource}
+                        loading={loading}
+                        rowSelection={resolvedRowSelection}
+                        scroll={{ x: 'max-content', ...tableProps?.scroll }}
+                        locale={{
+                            emptyText: (
+                                <Empty
+                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                    description="No records found"
+                                    style={{ padding: '32px 0' }}
+                                />
+                            ),
                         }}
-                    >
-                        <Table<T>
-                            rowKey={rowKey}
-                            columns={columns}
-                            dataSource={dataSource}
-                            loading={loading}
-                            rowSelection={resolvedRowSelection}
-                            scroll={{
-                                x: 'max-content',
-                                ...tableProps?.scroll,
-                            }}
-                            locale={{
-                                emptyText: <Empty />,
-                            }}
-                            pagination={{
-                                showSizeChanger: true,
-                                pageSizeOptions: [
-                                    '10',
-                                    '20',
-                                    '50',
-                                    '100',
-                                ],
-                                showTotal: (
-                                    total,
-                                ) =>
-                                    `${total} items`,
-                                ...(typeof tableProps?.pagination ===
-                                'object'
-                                    ? tableProps.pagination
-                                    : {}),
-                            }}
-                            {...tableProps}
-                        />
-                    </div>
-                </Card>
-            </div>
+                        pagination={{
+                            showSizeChanger: true,
+                            pageSizeOptions: ['10', '20', '50', '100'],
+                            showTotal: (total) => `${total} items`,
+                            ...(typeof tableProps?.pagination === 'object'
+                                ? tableProps.pagination
+                                : {}),
+                        }}
+                        {...tableProps}
+                    />
+                </div>
+            </Card>
+        </div>
     );
 }
