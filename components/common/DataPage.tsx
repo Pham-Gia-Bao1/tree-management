@@ -58,8 +58,13 @@ interface DataPageProps<T> {
      * header (Edit / Activate / Deactivate / Export style). Pass buttons that
      * manage their own `disabled` state based on the current selection.
      * When provided, this replaces the legacy alert-style selection banner.
+     * By default the strip only renders once at least one row is selected,
+     * to keep the table header uncluttered — set `toolbarAlwaysVisible` to
+     * keep it pinned even with an empty selection.
      */
     toolbar?: ReactNode;
+    /** Show the `toolbar` strip even when nothing is selected. Default: false. */
+    toolbarAlwaysVisible?: boolean;
     /** Noun used for the "N selected" label, e.g. "user" -> "3 users selected". */
     selectionLabel?: string;
 
