@@ -642,7 +642,7 @@ export default function UsersPage() {
                 </Form>
             </Modal>
 
-            {/* Detail Modal (replaces Drawer) */}
+            {/* Detail Modal – spacious and clean */}
             <Modal
                 open={detailOpen}
                 width={800}
@@ -673,8 +673,6 @@ export default function UsersPage() {
                                     icon={<StopOutlined />}
                                     onClick={() => {
                                         void toggleStatus(detailRecord);
-                                        // Optionally refresh detail record after status change
-                                        // but we reload the list; the modal stays open.
                                     }}
                                 >
                                     {detailRecord.status === 'active' ? 'Deactivate' : 'Activate'}
@@ -716,49 +714,48 @@ export default function UsersPage() {
                 destroyOnClose
             >
                 {detailRecord ? (
-                    <>
-                        {/* Two‑column description layout */}
-                        <Flex vertical gap={24}>
-                            <div style={{ background: '#fafafa', padding: 16, borderRadius: 8 }}>
-                                <Descriptions column={2} size="middle" bordered={false}>
-                                    <Descriptions.Item label={<><MailOutlined /> Email</>}>
-                                        {detailRecord.email}
-                                    </Descriptions.Item>
-                                    <Descriptions.Item label={<><ApartmentOutlined /> Branch</>}>
-                                        {detailRecord.branch || '—'}
-                                    </Descriptions.Item>
-                                    <Descriptions.Item label={<><CalendarOutlined /> Birth date</>}>
-                                        {detailRecord.birthDate ?? '—'}
-                                    </Descriptions.Item>
-                                    <Descriptions.Item label={<><IdcardOutlined /> User ID</>}>
-                                        <Text code copyable style={{ fontSize: 12 }}>
-                                            {detailRecord.id}
-                                        </Text>
-                                    </Descriptions.Item>
-                                </Descriptions>
-                            </div>
+                    <Flex vertical gap={24}>
+                        {/* Two‑column description */}
+                        <div style={{ background: '#fafafa', padding: 16, borderRadius: 8 }}>
+                            <Descriptions column={2} size="middle" bordered={false}>
+                                <Descriptions.Item label={<><MailOutlined /> Email</>}>
+                                    {detailRecord.email}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<><ApartmentOutlined /> Branch</>}>
+                                    {detailRecord.branch || '—'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<><CalendarOutlined /> Birth date</>}>
+                                    {detailRecord.birthDate ?? '—'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<><IdcardOutlined /> User ID</>}>
+                                    <Text code copyable style={{ fontSize: 12 }}>
+                                        {detailRecord.id}
+                                    </Text>
+                                </Descriptions.Item>
+                            </Descriptions>
+                        </div>
 
-                            <Divider style={{ margin: 0 }} orientation="start" plain>
-                                Roles
-                            </Divider>
-
-                            <Space size={8} wrap>
-                                {detailRecord.roles.map((role) => (
-                                    <Tag key={role} color={ROLE_COLORS[role]} bordered={false} style={{ fontSize: 14 }}>
-                                        {role}
-                                    </Tag>
-                                ))}
-                            </Space>
-
-                            <Divider style={{ margin: 0 }} />
-
-                            {/* Additional info if needed */}
-                            <div style={{ color: '#8c8c8c', fontSize: 13 }}>
-                                Created: {detailRecord.createdAt ? new Date(detailRecord.createdAt).toLocaleString() : '—'}
-                                &nbsp;·&nbsp; Updated: {detailRecord.updatedAt ? new Date(detailRecord.updatedAt).toLocaleString() : '—'}
-                            </div>
+                        {/* Roles section – fixed: no orientation prop */}
+                        <Flex align="center" gap={12} style={{ margin: '8px 0 4px' }}>
+                            <Text strong style={{ fontSize: 14 }}>Roles</Text>
+                            <Divider style={{ flex: 1, margin: 0 }} />
                         </Flex>
-                    </>
+
+                        <Space size={8} wrap>
+                            {detailRecord.roles.map((role) => (
+                                <Tag key={role} color={ROLE_COLORS[role]} bordered={false} style={{ fontSize: 14 }}>
+                                    {role}
+                                </Tag>
+                            ))}
+                        </Space>
+
+                        <Divider style={{ margin: 0 }} />
+
+                        <div style={{ color: '#8c8c8c', fontSize: 13 }}>
+                            Created: {detailRecord.createdAt ? new Date(detailRecord.createdAt).toLocaleString() : '—'}
+                            &nbsp;·&nbsp; Updated: {detailRecord.updatedAt ? new Date(detailRecord.updatedAt).toLocaleString() : '—'}
+                        </div>
+                    </Flex>
                 ) : (
                     <Empty description="No user selected" />
                 )}
