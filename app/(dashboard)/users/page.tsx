@@ -18,7 +18,6 @@ import {
     Select,
     Space,
     Tag,
-    Tooltip,
     Typography,
 } from 'antd';
 import {
@@ -699,26 +698,27 @@ export default function UsersPage() {
             >
                 {detailRecord ? (
                     <Flex vertical gap={24}>
-                        <Flex vertical gap={12}>
-                            <Descriptions column={2} size="middle" bordered={false}>
-                                <Descriptions.Item label={<><MailOutlined /> Email</>}>
-                                    {detailRecord.email}
-                                </Descriptions.Item>
-                                <Descriptions.Item label={<><ApartmentOutlined /> Branch</>}>
-                                    {detailRecord.branch || '—'}
-                                </Descriptions.Item>
-                                <Descriptions.Item label={<><CalendarOutlined /> Birth date</>}>
-                                    {detailRecord.birthDate ?? '—'}
-                                </Descriptions.Item>
-                                <Descriptions.Item label={<><IdcardOutlined /> User ID</>}>
-                                    <Text code copyable style={{ fontSize: 12 }}>
-                                        {detailRecord.id}
-                                    </Text>
-                                </Descriptions.Item>
-                            </Descriptions>
-                        </Flex>
+                        <Descriptions column={2} size="middle" bordered={false}>
+                            <Descriptions.Item label={<><MailOutlined /> Email</>}>
+                                {detailRecord.email}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={<><ApartmentOutlined /> Branch</>}>
+                                {detailRecord.branch || '—'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={<><CalendarOutlined /> Birth date</>}>
+                                {detailRecord.birthDate ?? '—'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={<><IdcardOutlined /> User ID</>}>
+                                <Text code copyable style={{ fontSize: 12 }}>
+                                    {detailRecord.id}
+                                </Text>
+                            </Descriptions.Item>
+                        </Descriptions>
 
-                        <Divider orientation="left">Roles</Divider>
+                        <Flex vertical gap={8}>
+                            <Text strong style={{ fontSize: 16 }}>Roles</Text>
+                            <Divider style={{ margin: 0 }} />
+                        </Flex>
                         <Space size={8} wrap>
                             {detailRecord.roles.map((role) => (
                                 <Tag key={role} color={ROLE_COLORS[role]} bordered={false} style={{ fontSize: 14 }}>
