@@ -1,7 +1,6 @@
-
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, type Key } from 'react';
 
 import {
     Breadcrumb,
@@ -51,6 +50,15 @@ interface DataPageProps<T> {
     onRefresh?: () => void;
 
     tableProps?: TableProps<T>;
+
+    // --- Row selection support ---
+    selectable?: boolean;
+    selectedRowKeys?: Key[];
+    onSelectedRowKeysChange?: (keys: Key[], rows: T[]) => void;
+    /** Buttons/content shown in the toolbar above the table once at least one row is selected */
+    selectionActions?: ReactNode;
+    /** Escape hatch to fully override the computed rowSelection config */
+    rowSelection?: TableProps<T>['rowSelection'];
 }
 
 export default function DataPage<T extends object>({
@@ -76,7 +84,27 @@ export default function DataPage<T extends object>({
     onRefresh,
 
     tableProps,
+
+    selectable = false,
+    selectedRowKeys,
+    onSelectedRowKeysChange,
+    selectionActions,
+    rowSelection: rowSelectionProp,
 }: DataPageProps<T>) {
+    const resolvedRowSelection: TableProps<T>['rowSelection'] | undefined =
+        selectable
+            ? {
+                  selectedRowKeys,
+                  onChange: (keys, rows) =>
+                      onSelectedRowKeysChange?.(keys, rows),
+                  ...rowSelectionProp,
+              }
+            : rowSelectionProp;
+
+    const hasSelection = Boolean(
+        selectable && selectedRowKeys && selectedRowKeys.length > 0,
+    );
+
     return (
         
             <div className="space-y-4">
@@ -252,6 +280,25 @@ export default function DataPage<T extends object>({
                     </Card>
                 )}
 
+                {/* Selection toolbar - shown above the table when rows are checked */}
+                {hasSelection && (
+                    <Card
+                        styles={{ body: { padding: 12 } }}
+                        style={{
+                            background: '#F0FDF4',
+                            borderColor: '#BBF7D0',
+                        }}
+                    >
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <Text strong>
+                                {selectedRowKeys?.length} selected
+                            </Text>
+
+                            <Space wrap>{selectionActions}</Space>
+                        </div>
+                    </Card>
+                )}
+
                 {/* Table */}
                 <Card
                     styles={{
@@ -272,6 +319,7 @@ export default function DataPage<T extends object>({
                             columns={columns}
                             dataSource={dataSource}
                             loading={loading}
+                            rowSelection={resolvedRowSelection}
                             scroll={{
                                 x: 'max-content',
                                 ...tableProps?.scroll,
@@ -303,4 +351,3 @@ export default function DataPage<T extends object>({
             </div>
     );
 }
-
