@@ -4,7 +4,6 @@ import React, {
   useState,
   useCallback,
   useEffect,
-  useRef,
 } from "react";
 import {
   Input,
@@ -14,8 +13,6 @@ import {
   Empty,
   Spin,
   Avatar,
-  Card,
-  Descriptions,
   Typography,
   Skeleton,
   Timeline,
@@ -25,6 +22,9 @@ import {
   Badge,
   Divider,
   Space,
+  Flex,
+  Card,
+  Layout,
 } from "antd";
 import {
   SearchOutlined,
@@ -63,8 +63,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-const { Text, Title } = Typography;
-const { Option } = Select;
+const { Text } = Typography;
+const { Sider, Content } = Layout;
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -120,14 +120,13 @@ type MemberDetail = {
 };
 
 type PanelMode = "view" | "create" | "edit";
-type ViewMode = "diagram" | "tree";
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS — level-based color palette
+// DESIGN TOKENS — level-based color palette (colors only; layout/spacing
+// now comes from antd's theme via components, not inline CSS)
 // ─────────────────────────────────────────────────────────────
 
 const LEVEL_PALETTE = [
-  // Level 0 — root/mentor cấp 1
   {
     header: "#6D28D9",
     headerText: "#fff",
@@ -135,13 +134,10 @@ const LEVEL_PALETTE = [
     border: "#8B5CF6",
     avatarBg: "rgba(255,255,255,0.25)",
     avatarText: "#fff",
-    tagBg: "rgba(255,255,255,0.18)",
-    tagText: "#fff",
     subtextOnBg: "#5B21B6",
     chipBg: "#7C3AED",
     chipText: "#fff",
   },
-  // Level 1 — mentor cấp 2
   {
     header: "#1D4ED8",
     headerText: "#fff",
@@ -149,13 +145,10 @@ const LEVEL_PALETTE = [
     border: "#3B82F6",
     avatarBg: "rgba(255,255,255,0.25)",
     avatarText: "#fff",
-    tagBg: "rgba(255,255,255,0.18)",
-    tagText: "#fff",
     subtextOnBg: "#1E40AF",
     chipBg: "#2563EB",
     chipText: "#fff",
   },
-  // Level 2 — mentor cấp 3
   {
     header: "#0E7490",
     headerText: "#fff",
@@ -163,13 +156,10 @@ const LEVEL_PALETTE = [
     border: "#06B6D4",
     avatarBg: "rgba(255,255,255,0.25)",
     avatarText: "#fff",
-    tagBg: "rgba(255,255,255,0.18)",
-    tagText: "#fff",
     subtextOnBg: "#155E75",
     chipBg: "#0891B2",
     chipText: "#fff",
   },
-  // Level 3+ — deeper
   {
     header: "#065F46",
     headerText: "#fff",
@@ -177,8 +167,6 @@ const LEVEL_PALETTE = [
     border: "#10B981",
     avatarBg: "rgba(255,255,255,0.25)",
     avatarText: "#fff",
-    tagBg: "rgba(255,255,255,0.18)",
-    tagText: "#fff",
     subtextOnBg: "#064E3B",
     chipBg: "#059669",
     chipText: "#fff",
@@ -215,9 +203,8 @@ const getInitials = (name?: string) => {
 
 const NODE_W = 210;
 const NODE_H = 96;
-const MENTOR_NODE_H = 88;
-const GAP_X = 60;   // horizontal gap between columns
-const GAP_Y = 20;   // vertical gap between sibling nodes
+const GAP_X = 60;
+const GAP_Y = 20;
 
 function getSubtreeIds(links: Link[], rootId: string): Set<string> {
   const set = new Set<string>([rootId]);
@@ -238,13 +225,11 @@ function getSubtreeIds(links: Link[], rootId: string): Set<string> {
 
 function computeLayout(
   rootIds: string[],
-  links: Link[],
-  levelMap: Record<string, number>
+  links: Link[]
 ): Record<string, { x: number; y: number }> {
   const posMap: Record<string, { x: number; y: number }> = {};
   const subtreeH: Record<string, number> = {};
 
-  // Compute subtree height (in row units)
   const computeH = (id: string): number => {
     const children = links.filter((l) => l.mentorId === id).map((l) => l.discipleId);
     if (!children.length) {
@@ -304,7 +289,6 @@ function buildTree(
   const rootIds = allMentorIds.filter((id) => !allDiscipleIds.includes(id));
   const allIds = [...new Set([...allMentorIds, ...allDiscipleIds])];
 
-  // BFS level map
   const levelMap: Record<string, number> = {};
   const queue = [...rootIds];
   rootIds.forEach((id) => (levelMap[id] = 0));
@@ -327,7 +311,7 @@ function buildTree(
     discipleCount[l.mentorId] = (discipleCount[l.mentorId] || 0) + 1;
   });
 
-  const posMap = computeLayout(rootIds, links, levelMap);
+  const posMap = computeLayout(rootIds, links);
   const subtreeIds = focusedId ? getSubtreeIds(links, focusedId) : null;
   const mentorSet = new Set(allMentorIds);
 
@@ -335,7 +319,6 @@ function buildTree(
   const edges: Edge[] = [];
   const addedIds = new Set<string>();
 
-  // Root node
   nodes.push({
     id: "root",
     type: "rootNode",
@@ -347,7 +330,6 @@ function buildTree(
   });
   addedIds.add("root");
 
-  // Member nodes
   allIds.forEach((id) => {
     if (addedIds.has(id)) return;
     const member = memberMap.get(id);
@@ -376,8 +358,7 @@ function buildTree(
     addedIds.add(id);
   });
 
-  // Edges from root to root-level mentors
-  rootIds.forEach((rid, i) => {
+  rootIds.forEach((rid) => {
     const level = 0;
     const highlighted = !subtreeIds || subtreeIds.has(rid);
     const dimmed = !!subtreeIds && !highlighted;
@@ -404,7 +385,6 @@ function buildTree(
     } as Edge);
   });
 
-  // Edges between members
   links.forEach((link) => {
     const srcLevel = levelMap[link.mentorId] ?? 0;
     const highlighted =
@@ -448,7 +428,10 @@ function buildTree(
 }
 
 // ─────────────────────────────────────────────────────────────
-// CUSTOM NODE: ROOT
+// CUSTOM NODES — React Flow nodes are rendered on an absolutely
+// positioned canvas, so they intentionally keep their own inline
+// styles (antd components don't apply here). Everything *around*
+// the canvas (toolbar, sidebar, side panel, forms) uses antd.
 // ─────────────────────────────────────────────────────────────
 
 const RootNode = ({ data }: { data: any }) => {
@@ -512,32 +495,14 @@ const RootNode = ({ data }: { data: any }) => {
       <Handle
         type="source"
         position={Position.Right}
-        style={{
-          background: ROOT_COLOR.border,
-          width: 10,
-          height: 10,
-          border: "2.5px solid #fff",
-          boxShadow: "0 0 0 1px #E5E7EB",
-        }}
+        style={{ background: ROOT_COLOR.border, width: 10, height: 10, border: "2.5px solid #fff", boxShadow: "0 0 0 1px #E5E7EB" }}
       />
     </div>
   );
 };
 
-// ─────────────────────────────────────────────────────────────
-// CUSTOM NODE: MENTOR
-// ─────────────────────────────────────────────────────────────
-
 const MentorNode = ({ data }: { data: any }) => {
-  const {
-    member,
-    level,
-    isDimmed,
-    isFocus,
-    discipleCount,
-    onEyeClick,
-  } = data;
-
+  const { member, level, isDimmed, isFocus, discipleCount, onEyeClick } = data;
   const p = getPalette(level);
   const initials = getInitials(member?.fullName);
 
@@ -551,23 +516,11 @@ const MentorNode = ({ data }: { data: any }) => {
         overflow: "hidden",
         opacity: isDimmed ? 0.25 : 1,
         transition: "all 0.2s",
-        boxShadow: isFocus
-          ? `0 0 0 4px ${p.bg}, 0 4px 16px rgba(0,0,0,0.1)`
-          : "0 2px 8px rgba(0,0,0,0.06)",
+        boxShadow: isFocus ? `0 0 0 4px ${p.bg}, 0 4px 16px rgba(0,0,0,0.1)` : "0 2px 8px rgba(0,0,0,0.06)",
         cursor: "pointer",
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          background: p.header,
-          padding: "10px 12px",
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          position: "relative",
-        }}
-      >
+      <div style={{ background: p.header, padding: "10px 12px", display: "flex", alignItems: "center", gap: 9, position: "relative" }}>
         <div
           style={{
             width: 32,
@@ -588,92 +541,33 @@ const MentorNode = ({ data }: { data: any }) => {
           {initials}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: p.headerText,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              lineHeight: 1.3,
-            }}
-          >
+          <div style={{ fontSize: 12, fontWeight: 600, color: p.headerText, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.3 }}>
             {member?.fullName || "Vô danh"}
           </div>
-          <div
-            style={{
-              fontSize: 10,
-              color: "rgba(255,255,255,0.7)",
-              marginTop: 2,
-            }}
-          >
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>
             Mentor cấp {level + 1}
           </div>
         </div>
-        {/* Eye button */}
         <div
           onClick={(e) => {
             e.stopPropagation();
             if (member?.id) onEyeClick(member.id);
           }}
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: 6,
-            background: "rgba(255,255,255,0.15)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-            transition: "background 0.15s",
-          }}
+          style={{ width: 24, height: 24, borderRadius: 6, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
           title="Xem chi tiết"
         >
           <EyeOutlined style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }} />
         </div>
       </div>
 
-      {/* Body */}
       <div style={{ padding: "8px 12px 10px", background: p.bg }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-          <div
-            style={{
-              fontSize: 10,
-              color: p.subtextOnBg,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              minWidth: 0,
-            }}
-          >
+          <div style={{ fontSize: 10, color: p.subtextOnBg, display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
             <BookOutlined style={{ fontSize: 10, flexShrink: 0 }} />
-            <span
-              style={{
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {member?.branchName || "—"}
-            </span>
+            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{member?.branchName || "—"}</span>
           </div>
           {discipleCount > 0 && (
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: p.chipText,
-                background: p.chipBg,
-                borderRadius: 20,
-                padding: "2px 8px",
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-              }}
-            >
+            <div style={{ fontSize: 10, fontWeight: 600, color: p.chipText, background: p.chipBg, borderRadius: 20, padding: "2px 8px", flexShrink: 0, display: "flex", alignItems: "center", gap: 3 }}>
               <TeamOutlined style={{ fontSize: 9 }} />
               {discipleCount}
             </div>
@@ -681,47 +575,14 @@ const MentorNode = ({ data }: { data: any }) => {
         </div>
       </div>
 
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{
-          background: p.border,
-          width: 10,
-          height: 10,
-          border: "2.5px solid #fff",
-          boxShadow: "0 0 0 1px #E5E7EB",
-        }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{
-          background: p.border,
-          width: 10,
-          height: 10,
-          border: "2.5px solid #fff",
-          boxShadow: "0 0 0 1px #E5E7EB",
-        }}
-      />
+      <Handle type="target" position={Position.Left} style={{ background: p.border, width: 10, height: 10, border: "2.5px solid #fff", boxShadow: "0 0 0 1px #E5E7EB" }} />
+      <Handle type="source" position={Position.Right} style={{ background: p.border, width: 10, height: 10, border: "2.5px solid #fff", boxShadow: "0 0 0 1px #E5E7EB" }} />
     </div>
   );
 };
 
-// ─────────────────────────────────────────────────────────────
-// CUSTOM NODE: DISCIPLE
-// ─────────────────────────────────────────────────────────────
-
 const DiscipleNode = ({ data }: { data: any }) => {
-  const {
-    member,
-    level,
-    isDimmed,
-    isFocus,
-    onEyeClick,
-    link,
-    onEditEdge,
-  } = data;
-
+  const { member, isDimmed, isFocus, onEyeClick, link, onEditEdge } = data;
   const isCompleted = link?.status === "completed";
   const initials = getInitials(member?.fullName);
 
@@ -735,71 +596,24 @@ const DiscipleNode = ({ data }: { data: any }) => {
         overflow: "hidden",
         opacity: isDimmed ? 0.2 : 1,
         transition: "all 0.2s",
-        boxShadow: isFocus
-          ? "0 0 0 3px #EDE9FE, 0 4px 14px rgba(0,0,0,0.1)"
-          : "0 1px 4px rgba(0,0,0,0.05)",
+        boxShadow: isFocus ? "0 0 0 3px #EDE9FE, 0 4px 14px rgba(0,0,0,0.1)" : "0 1px 4px rgba(0,0,0,0.05)",
         cursor: "pointer",
       }}
     >
-      <div
-        style={{
-          padding: "9px 12px",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        {/* Avatar */}
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: "50%",
-            background: "#F3F4F6",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 11,
-            fontWeight: 600,
-            color: "#6B7280",
-            flexShrink: 0,
-            border: "1px solid #E5E7EB",
-          }}
-        >
+      <div style={{ padding: "9px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, color: "#6B7280", flexShrink: 0, border: "1px solid #E5E7EB" }}>
           {initials}
         </div>
 
-        {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: "#111827",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {member?.fullName || "Vô danh"}
           </div>
-          <div
-            style={{
-              fontSize: 10,
-              color: "#9CA3AF",
-              marginTop: 1,
-              display: "flex",
-              alignItems: "center",
-              gap: 3,
-            }}
-          >
-            {link?.startDate && (
-              <span>Từ {link.startDate}</span>
-            )}
+          <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 1, display: "flex", alignItems: "center", gap: 3 }}>
+            {link?.startDate && <span>Từ {link.startDate}</span>}
           </div>
         </div>
 
-        {/* Actions */}
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
           {onEditEdge && link && (
             <div
@@ -807,17 +621,7 @@ const DiscipleNode = ({ data }: { data: any }) => {
                 e.stopPropagation();
                 onEditEdge(link);
               }}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 6,
-                background: "#F9FAFB",
-                border: "1px solid #E5E7EB",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-              }}
+              style={{ width: 22, height: 22, borderRadius: 6, background: "#F9FAFB", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
               title="Chỉnh sửa liên kết"
             >
               <EditOutlined style={{ fontSize: 10, color: "#9CA3AF" }} />
@@ -828,17 +632,7 @@ const DiscipleNode = ({ data }: { data: any }) => {
               e.stopPropagation();
               if (member?.id) onEyeClick(member.id);
             }}
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: 6,
-              background: "#F9FAFB",
-              border: "1px solid #E5E7EB",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-            }}
+            style={{ width: 22, height: 22, borderRadius: 6, background: "#F9FAFB", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
             title="Xem chi tiết"
           >
             <EyeOutlined style={{ fontSize: 10, color: "#9CA3AF" }} />
@@ -846,29 +640,9 @@ const DiscipleNode = ({ data }: { data: any }) => {
         </div>
       </div>
 
-      {/* Status strip */}
-      <div
-        style={{
-          padding: "4px 12px 6px",
-          borderTop: "1px solid #F3F4F6",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          background: isCompleted ? "#F0FDF4" : "#FFFBEB",
-        }}
-      >
-        {isCompleted ? (
-          <CheckCircleOutlined style={{ fontSize: 10, color: "#16A34A" }} />
-        ) : (
-          <ClockCircleOutlined style={{ fontSize: 10, color: "#D97706" }} />
-        )}
-        <span
-          style={{
-            fontSize: 10,
-            color: isCompleted ? "#16A34A" : "#D97706",
-            fontWeight: 500,
-          }}
-        >
+      <div style={{ padding: "4px 12px 6px", borderTop: "1px solid #F3F4F6", display: "flex", alignItems: "center", gap: 6, background: isCompleted ? "#F0FDF4" : "#FFFBEB" }}>
+        {isCompleted ? <CheckCircleOutlined style={{ fontSize: 10, color: "#16A34A" }} /> : <ClockCircleOutlined style={{ fontSize: 10, color: "#D97706" }} />}
+        <span style={{ fontSize: 10, color: isCompleted ? "#16A34A" : "#D97706", fontWeight: 500 }}>
           {isCompleted ? "Hoàn thành" : "Đang đào tạo"}
         </span>
         {member?.branchName && (
@@ -879,28 +653,8 @@ const DiscipleNode = ({ data }: { data: any }) => {
         )}
       </div>
 
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{
-          background: "#9CA3AF",
-          width: 8,
-          height: 8,
-          border: "2px solid #fff",
-          boxShadow: "0 0 0 1px #E5E7EB",
-        }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{
-          background: "#9CA3AF",
-          width: 8,
-          height: 8,
-          border: "2px solid #fff",
-          boxShadow: "0 0 0 1px #E5E7EB",
-        }}
-      />
+      <Handle type="target" position={Position.Left} style={{ background: "#9CA3AF", width: 8, height: 8, border: "2px solid #fff", boxShadow: "0 0 0 1px #E5E7EB" }} />
+      <Handle type="source" position={Position.Right} style={{ background: "#9CA3AF", width: 8, height: 8, border: "2px solid #fff", boxShadow: "0 0 0 1px #E5E7EB" }} />
     </div>
   );
 };
@@ -912,29 +666,6 @@ const nodeTypes = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// INLINE STYLES HELPERS
-// ─────────────────────────────────────────────────────────────
-
-const PANEL_CARD_STYLE: React.CSSProperties = {
-  background: "#fff",
-  border: "1px solid #F3F4F6",
-  borderRadius: 12,
-  overflow: "hidden",
-};
-
-const PANEL_CARD_HEAD_STYLE: React.CSSProperties = {
-  padding: "9px 14px",
-  borderBottom: "1px solid #F3F4F6",
-  display: "flex",
-  alignItems: "center",
-  gap: 7,
-  fontSize: 11,
-  fontWeight: 600,
-  color: "#374151",
-  background: "#FAFAFA",
-};
-
-// ─────────────────────────────────────────────────────────────
 // MAIN CONTENT
 // ─────────────────────────────────────────────────────────────
 
@@ -943,38 +674,30 @@ function DiagramContent() {
   const { fitView } = useReactFlow();
   const [panelForm] = Form.useForm();
 
-  // Data
   const [courses, setCourses] = useState<Course[]>([]);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [selectedCourse, setSelectedCourse] = useState("");
 
-  // Tree
   const [treeLinks, setTreeLinks] = useState<Link[]>([]);
   const [memberMap, setMemberMap] = useState<Map<string, MemberProfile>>(new Map());
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading] = useState(false);
 
-  // Focus & view
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [focusMyself] = useState(false);
   const [currentUserId] = useState<string>("");
-  const [viewMode] = useState<ViewMode>("diagram");
 
-  // Panel state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>("view");
   const [editingLink, setEditingLink] = useState<Link | null>(null);
 
-  // Detail
   const [memberDetail, setMemberDetail] = useState<MemberDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [messageInput, setMessageInput] = useState("");
   const [searchText, setSearchText] = useState("");
-
-  // ── Load initial data ──────────────────────────────────────
 
   useEffect(() => {
     Promise.all([
@@ -993,8 +716,6 @@ function DiagramContent() {
       .catch(() => message.error("Lỗi tải dữ liệu khởi tạo"));
   }, []); // eslint-disable-line
 
-  // ── Load tree ──────────────────────────────────────────────
-
   const loadTree = useCallback(async () => {
     if (!selectedCourse) return;
     setLoading(true);
@@ -1007,11 +728,7 @@ function DiagramContent() {
       const res = await fetch(url).then((r) => r.json());
       if (res.success && res.data?.links) {
         setTreeLinks(res.data.links);
-        setMemberMap(
-          new Map(
-            (res.data.members || []).map((m: MemberProfile) => [m.id, m])
-          )
-        );
+        setMemberMap(new Map((res.data.members || []).map((m: MemberProfile) => [m.id, m])));
       } else {
         setTreeLinks([]);
         setMemberMap(new Map());
@@ -1026,8 +743,6 @@ function DiagramContent() {
   useEffect(() => {
     loadTree();
   }, [loadTree]);
-
-  // ── Rebuild graph when data or focus changes ───────────────
 
   const onEyeClick = useCallback(
     (memberId: string) => {
@@ -1072,20 +787,11 @@ function DiagramContent() {
       setEdges([]);
       return;
     }
-    const { nodes: n, edges: e } = buildTree(
-      treeLinks,
-      memberMap,
-      focusedNodeId ?? undefined,
-      onEyeClick,
-      onEditEdge
-    );
+    const { nodes: n, edges: e } = buildTree(treeLinks, memberMap, focusedNodeId ?? undefined, onEyeClick, onEditEdge);
     setNodes(n);
     setEdges(e);
-    // Auto fit after tree build
     setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50);
   }, [treeLinks, memberMap, focusedNodeId, onEyeClick, onEditEdge, setNodes, setEdges, fitView]);
-
-  // ── Node click ────────────────────────────────────────────
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -1099,8 +805,6 @@ function DiagramContent() {
     },
     [onEyeClick]
   );
-
-  // ── API handlers ──────────────────────────────────────────
 
   const handleCreateRelation = async () => {
     const values = await panelForm.validateFields();
@@ -1222,13 +926,11 @@ function DiagramContent() {
     [openCreatePanel, panelForm]
   );
 
-  // ── Sidebar member list ───────────────────────────────────
-
   const sidebarMembers = Array.from(memberMap.values()).filter((m) =>
     m.fullName?.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  // ── Right panel content ───────────────────────────────────
+  // ── Right panel: detail view ───────────────────────────────
 
   const renderDetailPanel = () => {
     if (detailLoading) {
@@ -1241,408 +943,189 @@ function DiagramContent() {
 
     if (!memberDetail) {
       return (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "100%",
-            gap: 12,
-          }}
-        >
-          <Empty
-            description={
-              <span style={{ fontSize: 12, color: "#9CA3AF" }}>
-                Chọn một thành viên để xem chi tiết
-              </span>
-            }
-          />
-        </div>
+        <Flex align="center" justify="center" style={{ height: "100%" }}>
+          <Empty description="Chọn một thành viên để xem chi tiết" />
+        </Flex>
       );
     }
 
     const d = memberDetail;
     const initials = getInitials(d.member.fullName);
 
+    const statCards = [
+      { num: d.descendants.filter((x) => x.level === 1).length, label: "Môn đồ" },
+      { num: d.descendants.length, label: "Cây con" },
+      { num: d.descendants.filter((x) => x.link && !x.link.endDate).length, label: "Đang HD" },
+    ];
+
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "14px 14px 0",
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-          }}
-        >
-          {/* Hero card */}
-          <div style={PANEL_CARD_STYLE}>
-            <div
-              style={{
-                padding: "14px",
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 12,
-              }}
-            >
-              <Avatar
-                size={46}
-                style={{
-                  background: "#EDE9FE",
-                  color: "#6D28D9",
-                  fontWeight: 700,
-                  fontSize: 16,
-                  flexShrink: 0,
-                }}
-              >
-                {initials}
-              </Avatar>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 700,
-                    color: "#111827",
-                    lineHeight: 1.3,
-                  }}
-                >
-                  {d.member.fullName}
-                </div>
-                {d.member.email && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#9CA3AF",
-                      marginTop: 3,
-                    }}
-                  >
-                    {d.member.email}
-                  </div>
-                )}
-                <div style={{ marginTop: 6, display: "flex", gap: 5, flexWrap: "wrap" }}>
-                  {d.member.roles?.map((r) => (
-                    <Tag
-                      key={r}
-                      style={{
-                        fontSize: 10,
-                        padding: "1px 7px",
-                        borderRadius: 9,
-                        margin: 0,
-                        background: "#EDE9FE",
-                        color: "#6D28D9",
-                        border: "none",
-                      }}
-                    >
-                      {r}
-                    </Tag>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+      <Flex vertical style={{ height: "100%", overflow: "hidden" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+          <Flex vertical gap={12}>
+            {/* Hero card */}
+            <Card size="small">
+              <Flex gap={12} align="flex-start">
+                <Avatar size={46} style={{ background: "#EDE9FE", color: "#6D28D9", fontWeight: 700, flexShrink: 0 }}>
+                  {initials}
+                </Avatar>
+                <Flex vertical gap={4} style={{ minWidth: 0, flex: 1 }}>
+                  <Text strong style={{ fontSize: 15 }}>{d.member.fullName}</Text>
+                  {d.member.email && <Text type="secondary" style={{ fontSize: 12 }}>{d.member.email}</Text>}
+                  <Space size={4} wrap>
+                    {d.member.roles?.map((r) => (
+                      <Tag key={r} color="purple" bordered={false}>{r}</Tag>
+                    ))}
+                  </Space>
+                </Flex>
+              </Flex>
+            </Card>
 
-          {/* Stats row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            {[
-              {
-                num: d.descendants.filter((x) => x.level === 1).length,
-                label: "Môn đồ",
-                color: "#6D28D9",
-              },
-              {
-                num: d.descendants.length,
-                label: "Cây con",
-                color: "#0891B2",
-              },
-              {
-                num: d.descendants.filter(
-                  (x) => x.link && !x.link.endDate
-                ).length,
-                label: "Đang HD",
-                color: "#D97706",
-              },
-            ].map((s) => (
-              <div
-                key={s.label}
-                style={{
-                  background: "#FAFAFA",
-                  border: "1px solid #F3F4F6",
-                  borderRadius: 10,
-                  padding: "10px 8px",
-                  textAlign: "center",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 700,
-                    color: s.color,
-                    lineHeight: 1,
-                  }}
-                >
-                  {s.num}
-                </div>
-                <div
-                  style={{
-                    fontSize: 10,
-                    color: "#9CA3AF",
-                    marginTop: 4,
-                  }}
-                >
-                  {s.label}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Info */}
-          <div style={PANEL_CARD_STYLE}>
-            <div style={PANEL_CARD_HEAD_STYLE}>
-              <NodeIndexOutlined />
-              Thông tin cá nhân
-            </div>
-            {[
-              { label: "Điện thoại", val: d.member.phone || "—" },
-              { label: "Ngày sinh", val: d.member.birthDate || "—" },
-              { label: "Chi hội", val: d.member.branchName || "—" },
-            ].map((row) => (
-              <div
-                key={row.label}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "8px 14px",
-                  borderBottom: "1px solid #F9FAFB",
-                  gap: 8,
-                }}
-              >
-                <span style={{ fontSize: 11, color: "#9CA3AF" }}>{row.label}</span>
-                <span
-                  style={{ fontSize: 12, fontWeight: 500, color: "#374151", textAlign: "right" }}
-                >
-                  {row.val}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Mentor stats */}
-          {d.mentorStats.length > 0 && (
-            <div style={PANEL_CARD_STYLE}>
-              <div style={PANEL_CARD_HEAD_STYLE}>
-                <TeamOutlined />
-                Chỉ số đào tạo
-              </div>
-              {d.mentorStats.map((stat) => (
-                <div
-                  key={stat.courseId}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "8px 14px",
-                    borderBottom: "1px solid #F9FAFB",
-                  }}
-                >
-                  <span style={{ fontSize: 11, color: "#6B7280" }}>
-                    {stat.courseName}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "#6D28D9",
-                    }}
-                  >
-                    {stat.totalDisciples}
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 400,
-                        color: "#9CA3AF",
-                        marginLeft: 3,
-                      }}
-                    >
-                      môn đồ
-                    </span>
-                  </span>
-                </div>
+            {/* Stats row */}
+            <Flex gap={8}>
+              {statCards.map((s) => (
+                <Card key={s.label} size="small" style={{ flex: 1, textAlign: "center" }}>
+                  <Text strong style={{ fontSize: 22, color: "#6D28D9", display: "block", lineHeight: 1 }}>
+                    {s.num}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>{s.label}</Text>
+                </Card>
               ))}
-            </div>
-          )}
+            </Flex>
 
-          {/* Hierarchy timeline */}
-          <div style={PANEL_CARD_STYLE}>
-            <div style={PANEL_CARD_HEAD_STYLE}>
-              <ApartmentOutlined />
-              Hệ thống cấp bậc
-            </div>
-            <div style={{ padding: "12px 14px" }}>
+            {/* Info */}
+            <Card
+              size="small"
+              title={
+                <Space size={6}>
+                  <NodeIndexOutlined />
+                  <Text strong style={{ fontSize: 12 }}>Thông tin cá nhân</Text>
+                </Space>
+              }
+              styles={{ body: { padding: 0 } }}
+            >
+              {[
+                { label: "Điện thoại", val: d.member.phone || "—" },
+                { label: "Ngày sinh", val: d.member.birthDate || "—" },
+                { label: "Chi hội", val: d.member.branchName || "—" },
+              ].map((row, idx, arr) => (
+                <Flex
+                  key={row.label}
+                  align="center"
+                  justify="space-between"
+                  style={{
+                    padding: "8px 14px",
+                    borderBottom: idx < arr.length - 1 ? "1px solid #F3F4F6" : undefined,
+                  }}
+                >
+                  <Text type="secondary" style={{ fontSize: 12 }}>{row.label}</Text>
+                  <Text style={{ fontSize: 12 }}>{row.val}</Text>
+                </Flex>
+              ))}
+            </Card>
+
+            {/* Mentor stats */}
+            {d.mentorStats.length > 0 && (
+              <Card
+                size="small"
+                title={
+                  <Space size={6}>
+                    <TeamOutlined />
+                    <Text strong style={{ fontSize: 12 }}>Chỉ số đào tạo</Text>
+                  </Space>
+                }
+                styles={{ body: { padding: 0 } }}
+              >
+                {d.mentorStats.map((stat, idx, arr) => (
+                  <Flex
+                    key={stat.courseId}
+                    align="center"
+                    justify="space-between"
+                    style={{
+                      padding: "8px 14px",
+                      borderBottom: idx < arr.length - 1 ? "1px solid #F3F4F6" : undefined,
+                    }}
+                  >
+                    <Text type="secondary" style={{ fontSize: 12 }}>{stat.courseName}</Text>
+                    <Text strong style={{ color: "#6D28D9" }}>
+                      {stat.totalDisciples} <Text type="secondary" style={{ fontWeight: 400, fontSize: 11 }}>môn đồ</Text>
+                    </Text>
+                  </Flex>
+                ))}
+              </Card>
+            )}
+
+            {/* Hierarchy timeline */}
+            <Card
+              size="small"
+              title={
+                <Space size={6}>
+                  <ApartmentOutlined />
+                  <Text strong style={{ fontSize: 12 }}>Hệ thống cấp bậc</Text>
+                </Space>
+              }
+            >
               <Timeline
                 items={[
-                  {
-                    color: "#6B7280",
-                    children: (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#9CA3AF",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        Khởi nguồn (Gốc)
-                      </div>
-                    ),
-                  },
+                  { color: "gray", children: <Text type="secondary" italic style={{ fontSize: 12 }}>Khởi nguồn (Gốc)</Text> },
                   ...d.ancestors
                     .slice()
                     .reverse()
                     .map((a) => ({
-                      color: "#3B82F6",
+                      color: "blue",
                       children: (
-                        <div
-                          style={{
-                            background: "#EFF6FF",
-                            border: "1px solid #DBEAFE",
-                            borderRadius: 8,
-                            padding: "5px 10px",
-                            fontSize: 11,
-                          }}
-                        >
-                          <span style={{ color: "#9CA3AF" }}>Người dẫn dắt: </span>
-                          <span style={{ fontWeight: 600, color: "#1D4ED8" }}>
-                            {a.member.fullName}
-                          </span>
-                        </div>
+                        <Text style={{ fontSize: 12 }}>
+                          <Text type="secondary">Người dẫn dắt: </Text>
+                          <Text strong>{a.member.fullName}</Text>
+                        </Text>
                       ),
                     })),
                   {
-                    color: "#6D28D9",
+                    color: "purple",
                     children: (
-                      <div
-                        style={{
-                          background: "#EDE9FE",
-                          border: "1.5px solid #8B5CF6",
-                          borderRadius: 8,
-                          padding: "5px 10px",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: "#5B21B6",
-                        }}
-                      >
-                        {d.member.fullName}{" "}
-                        <Tag
-                          style={{
-                            fontSize: 9,
-                            padding: "0 5px",
-                            background: "#6D28D9",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 6,
-                          }}
-                        >
-                          Đang xem
-                        </Tag>
-                      </div>
+                      <Space size={6}>
+                        <Text strong style={{ fontSize: 12 }}>{d.member.fullName}</Text>
+                        <Tag color="purple">Đang xem</Tag>
+                      </Space>
                     ),
                   },
                   ...d.descendants.map((desc) => ({
-                    color: "#F97316",
+                    color: "orange",
                     children: (
-                      <div
-                        style={{
-                          background: "#FFF7ED",
-                          border: "1px solid #FED7AA",
-                          borderRadius: 8,
-                          padding: "5px 10px",
-                          fontSize: 11,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <span>
-                          <span style={{ color: "#9CA3AF" }}>Môn đồ: </span>
-                          <span style={{ fontWeight: 600, color: "#C2410C" }}>
-                            {desc.member.fullName}
-                          </span>
-                        </span>
-                        <Tag
-                          style={{
-                            fontSize: 9,
-                            margin: 0,
-                            background: "#FED7AA",
-                            color: "#9A3412",
-                            border: "none",
-                            borderRadius: 6,
-                            padding: "0 5px",
-                          }}
-                        >
-                          Cấp {desc.level}
-                        </Tag>
-                      </div>
+                      <Flex justify="space-between" align="center">
+                        <Text style={{ fontSize: 12 }}>
+                          <Text type="secondary">Môn đồ: </Text>
+                          <Text strong>{desc.member.fullName}</Text>
+                        </Text>
+                        <Tag color="orange">Cấp {desc.level}</Tag>
+                      </Flex>
                     ),
                   })),
                 ]}
               />
-            </div>
-          </div>
+            </Card>
+          </Flex>
         </div>
 
         {/* Message box — sticky bottom */}
-        <div
-          style={{
-            padding: "12px 14px",
-            borderTop: "1px solid #F3F4F6",
-            background: "#fff",
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#374151",
-              marginBottom: 8,
-            }}
-          >
+        <div style={{ padding: 14, borderTop: "1px solid #F3F4F6", flexShrink: 0 }}>
+          <Text strong style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
             Gửi tin nhắn đào tạo
-          </div>
+          </Text>
           <Input.TextArea
             rows={2}
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
             placeholder="Nhập lời nhắn cho thành viên..."
-            style={{
-              fontSize: 12,
-              borderRadius: 8,
-              resize: "none",
-              borderColor: "#E5E7EB",
-            }}
           />
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={sendMessage}
-            block
-            style={{
-              marginTop: 8,
-              background: "#6D28D9",
-              borderColor: "#6D28D9",
-              borderRadius: 8,
-              fontWeight: 500,
-              fontSize: 12,
-            }}
-          >
+          <Button type="primary" icon={<SendOutlined />} onClick={sendMessage} block style={{ marginTop: 8 }}>
             Gửi tin nhắn
           </Button>
         </div>
-      </div>
+      </Flex>
     );
   };
+
+  // ── Right panel: create / edit form ────────────────────────
 
   const renderFormPanel = () => {
     const isEdit = panelMode === "edit";
@@ -1654,137 +1137,71 @@ function DiagramContent() {
     const discipleOptions = users.map((u) => ({ value: u.id, label: u.fullName }));
 
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-          overflow: "hidden",
-        }}
-      >
-        {/* Form header */}
-        <div
-          style={{
-            padding: "10px 14px 14px",
-            background: isEdit ? "#FFF7ED" : "#F5F3FF",
-            borderBottom: "1px solid " + (isEdit ? "#FED7AA" : "#DDD6FE"),
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: isEdit ? "#C2410C" : "#5B21B6",
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-            }}
-          >
+      <Flex vertical style={{ height: "100%", overflow: "hidden" }}>
+        <div style={{ padding: 14, flexShrink: 0 }}>
+          <Space size={6}>
             {isEdit ? <EditOutlined /> : <PlusOutlined />}
-            {isEdit ? "Chỉnh sửa liên kết đào tạo" : "Tạo liên kết đào tạo mới"}
-          </div>
-          <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 3 }}>
-            {isEdit
-              ? "Cập nhật thông tin liên kết mentor — môn đồ."
-              : "Thiết lập quan hệ đào tạo giữa mentor và môn đồ."}
-          </div>
+            <Text strong>{isEdit ? "Chỉnh sửa liên kết đào tạo" : "Tạo liên kết đào tạo mới"}</Text>
+          </Space>
+          <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 4 }}>
+            {isEdit ? "Cập nhật thông tin liên kết mentor — môn đồ." : "Thiết lập quan hệ đào tạo giữa mentor và môn đồ."}
+          </Text>
         </div>
 
-        {/* Scrollable form */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "14px" }}>
-          <Form
-            form={panelForm}
-            layout="vertical"
-            requiredMark={false}
-            size="middle"
-          >
-            {/* Course */}
-            <Form.Item
-              label={
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                  Khóa học
-                </span>
-              }
-              name="courseId"
-              rules={[{ required: true, message: "Vui lòng chọn khóa học." }]}
-            >
+        <Divider style={{ margin: 0 }} />
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+          <Form form={panelForm} layout="vertical" requiredMark={false}>
+            <Form.Item label="Khóa học" name="courseId" rules={[{ required: true, message: "Vui lòng chọn khóa học." }]}>
               <Select
                 options={courses.map((c) => ({ value: c.id, label: c.name }))}
                 placeholder="Chọn khóa học..."
                 showSearch
                 optionFilterProp="label"
-                style={{ borderRadius: 8 }}
               />
             </Form.Item>
 
-            <Divider style={{ margin: "4px 0 14px", borderColor: "#F3F4F6" }} />
+            <Divider />
 
-            {/* Mentor */}
             <Form.Item
-              label={
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                  Người hướng dẫn (Mentor)
-                </span>
-              }
+              label="Người hướng dẫn (Mentor)"
               name="mentorId"
               rules={[
                 { required: true, message: "Vui lòng chọn người hướng dẫn." },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
-                    if (!value || value !== getFieldValue("discipleId"))
-                      return Promise.resolve();
+                    if (!value || value !== getFieldValue("discipleId")) return Promise.resolve();
                     return Promise.reject("Mentor và môn đồ phải là 2 người khác nhau.");
                   },
                 }),
               ]}
             >
-              <Select
-                options={mentorOptions}
-                placeholder="Chọn người hướng dẫn..."
-                showSearch
-                optionFilterProp="label"
-              />
+              <Select options={mentorOptions} placeholder="Chọn người hướng dẫn..." showSearch optionFilterProp="label" />
             </Form.Item>
 
-            {/* Disciple */}
             <Form.Item
-              label={
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                  Môn đồ
-                </span>
-              }
+              label="Môn đồ"
               name="discipleId"
               rules={[
                 { required: true, message: "Vui lòng chọn môn đồ." },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
-                    if (!value || value !== getFieldValue("mentorId"))
-                      return Promise.resolve();
+                    if (!value || value !== getFieldValue("mentorId")) return Promise.resolve();
                     return Promise.reject("Mentor và môn đồ phải là 2 người khác nhau.");
                   },
                 }),
               ]}
             >
-              <Select
-                options={discipleOptions}
-                placeholder="Chọn môn đồ..."
-                showSearch
-                optionFilterProp="label"
-              />
+              <Select options={discipleOptions} placeholder="Chọn môn đồ..." showSearch optionFilterProp="label" />
             </Form.Item>
 
-            <Divider style={{ margin: "4px 0 14px", borderColor: "#F3F4F6" }} />
+            <Divider />
 
-            {/* Dates */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Flex gap={10}>
               <Form.Item
-                label={
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                    Ngày bắt đầu
-                  </span>
-                }
+                label="Ngày bắt đầu"
                 name="startDate"
+                style={{ flex: 1 }}
                 rules={[
                   { required: true, message: "Bắt buộc." },
                   ({ getFieldValue }) => ({
@@ -1796,458 +1213,246 @@ function DiagramContent() {
                   }),
                 ]}
               >
-                <Input
-                  type="date"
-                  style={{ borderRadius: 8, fontSize: 12, width: "100%" }}
-                />
+                <Input type="date" />
               </Form.Item>
 
               <Form.Item
-                label={
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                    Ngày kết thúc
-                  </span>
-                }
+                label="Ngày kết thúc"
                 name="endDate"
+                style={{ flex: 1 }}
                 rules={[
                   ({ getFieldValue }) => ({
                     validator(_, value) {
                       const start = getFieldValue("startDate");
-                      if (!value || !start || start <= value)
-                        return Promise.resolve();
+                      if (!value || !start || start <= value) return Promise.resolve();
                       return Promise.reject("Phải lớn hơn ngày bắt đầu.");
                     },
                   }),
                 ]}
               >
-                <Input
-                  type="date"
-                  style={{ borderRadius: 8, fontSize: 12, width: "100%" }}
-                />
+                <Input type="date" />
               </Form.Item>
-            </div>
+            </Flex>
 
-            {/* Status */}
-            <Form.Item
-              label={
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                  Trạng thái
-                </span>
-              }
-              name="status"
-              initialValue="in_progress"
-            >
+            <Form.Item label="Trạng thái" name="status" initialValue="in_progress">
               <Select
                 options={[
                   {
                     value: "in_progress",
                     label: (
-                      <span>
-                        <ClockCircleOutlined
-                          style={{ color: "#D97706", marginRight: 6 }}
-                        />
+                      <Space size={6}>
+                        <ClockCircleOutlined style={{ color: "#D97706" }} />
                         Đang đào tạo
-                      </span>
+                      </Space>
                     ),
                   },
                   {
                     value: "completed",
                     label: (
-                      <span>
-                        <CheckCircleOutlined
-                          style={{ color: "#16A34A", marginRight: 6 }}
-                        />
+                      <Space size={6}>
+                        <CheckCircleOutlined style={{ color: "#16A34A" }} />
                         Đã hoàn thành
-                      </span>
+                      </Space>
                     ),
                   },
                 ]}
               />
             </Form.Item>
 
-            {/* Notes */}
-            <Form.Item
-              label={
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                  Ghi chú
-                </span>
-              }
-              name="notes"
-            >
-              <Input.TextArea
-                rows={3}
-                placeholder="Nhập ghi chú về quá trình đào tạo..."
-                style={{ borderRadius: 8, resize: "none", fontSize: 12 }}
-              />
+            <Form.Item label="Ghi chú" name="notes">
+              <Input.TextArea rows={3} placeholder="Nhập ghi chú về quá trình đào tạo..." />
             </Form.Item>
           </Form>
         </div>
 
-        {/* Action buttons */}
-        <div
-          style={{
-            padding: "12px 14px",
-            borderTop: "1px solid #F3F4F6",
-            background: "#fff",
-            display: "flex",
-            gap: 8,
-            flexShrink: 0,
-          }}
-        >
-          <Button
-            onClick={closeRightPanel}
-            style={{
-              flex: 1,
-              borderRadius: 8,
-              fontSize: 12,
-              height: 36,
-            }}
-          >
+        <Divider style={{ margin: 0 }} />
+
+        <Flex gap={8} style={{ padding: 14, flexShrink: 0 }}>
+          <Button onClick={closeRightPanel} style={{ flex: 1 }}>
             Hủy bỏ
           </Button>
           <Button
             type="primary"
+            danger={isEdit}
             loading={submitLoading}
             onClick={handleSubmit}
-            style={{
-              flex: 2,
-              background: isEdit ? "#EA580C" : "#6D28D9",
-              borderColor: isEdit ? "#EA580C" : "#6D28D9",
-              borderRadius: 8,
-              fontSize: 12,
-              fontWeight: 600,
-              height: 36,
-            }}
             icon={isEdit ? <EditOutlined /> : <PlusOutlined />}
+            style={{ flex: 2 }}
           >
             {isEdit ? "Lưu thay đổi" : "Tạo liên kết"}
           </Button>
-        </div>
-      </div>
+        </Flex>
+      </Flex>
     );
   };
 
   // ── Render ────────────────────────────────────────────────
 
   return (
-    <div
-      style={{
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        background: "#F9FAFB",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-        overflow: "hidden",
-      }}
-    >
+    <Layout style={{ height: "100vh", overflow: "hidden" }}>
       {/* ── TOOLBAR ─────────────────────────────────────────── */}
-      <div
+      <Flex
+        align="center"
+        justify="space-between"
+        gap={12}
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
+          height: 56,
           padding: "0 16px",
-          height: 52,
           background: "#fff",
           borderBottom: "1px solid #E5E7EB",
           flexShrink: 0,
-          gap: 12,
         }}
       >
-        {/* Left */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Flex align="center" gap={10}>
           <Tooltip title={sidebarOpen ? "Ẩn sidebar" : "Mở sidebar"}>
             <Button
               type="text"
               icon={sidebarOpen ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
               onClick={() => setSidebarOpen((v) => !v)}
-              style={{ color: "#6B7280" }}
             />
           </Tooltip>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "4px 10px",
-              background: "#F5F3FF",
-              borderRadius: 8,
-              border: "1px solid #DDD6FE",
-            }}
-          >
-            <ApartmentOutlined style={{ color: "#6D28D9", fontSize: 15 }} />
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: "#4C1D95",
-              }}
-            >
-              Cây Môn Đồ
-            </span>
-          </div>
-        </div>
+          <Tag color="purple" icon={<ApartmentOutlined />} style={{ fontSize: 13, padding: "4px 10px" }}>
+            Cây Môn Đồ
+          </Tag>
+        </Flex>
 
-        {/* Center */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Flex align="center" gap={8}>
           <Select
             value={selectedCourse}
             onChange={(val) => {
               setSelectedCourse(val);
               setFocusedNodeId(null);
             }}
-            style={{ width: 200, fontSize: 12 }}
+            style={{ width: 220 }}
             placeholder="Chọn khóa học"
             options={courses.map((c) => ({ value: c.id, label: c.name }))}
           />
           {focusedNodeId && (
-            <Button
-              size="small"
-              type="link"
-              onClick={() => setFocusedNodeId(null)}
-              style={{ fontSize: 11, color: "#9CA3AF", padding: "0 4px" }}
-            >
-              <CloseOutlined style={{ fontSize: 9 }} /> Bỏ focus
+            <Button size="small" type="link" icon={<CloseOutlined />} onClick={() => setFocusedNodeId(null)}>
+              Bỏ focus
             </Button>
           )}
-        </div>
+        </Flex>
 
-        {/* Right */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Button
-            icon={<PlusOutlined />}
-            onClick={() => openCreatePanel()}
-            style={{
-              background: "#6D28D9",
-              borderColor: "#6D28D9",
-              color: "#fff",
-              borderRadius: 8,
-              fontWeight: 600,
-              fontSize: 12,
-            }}
-          >
+        <Space>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreatePanel()}>
             Thêm liên kết
           </Button>
           <Tooltip title="Fit toàn bộ cây">
-            <Button
-              icon={<NodeIndexOutlined />}
-              onClick={() => fitView({ padding: 0.15, duration: 500 })}
-              style={{ borderRadius: 8, color: "#6B7280" }}
-            />
+            <Button icon={<NodeIndexOutlined />} onClick={() => fitView({ padding: 0.15, duration: 500 })} />
           </Tooltip>
-        </div>
-      </div>
+        </Space>
+      </Flex>
 
       {/* ── BODY ────────────────────────────────────────────── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-
+      <Layout style={{ overflow: "hidden" }}>
         {/* ── LEFT SIDEBAR ──────────────────────────────────── */}
         {sidebarOpen && (
-          <div
+          <Sider
+            width={240}
+            theme="light"
             style={{
-              width: 240,
-              minWidth: 240,
-              background: "#fff",
               borderRight: "1px solid #E5E7EB",
+              height: "100%",
+              overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              overflow: "hidden",
             }}
           >
-            {/* Search */}
-            <div
-              style={{
-                padding: "10px 12px",
-                borderBottom: "1px solid #F3F4F6",
-              }}
-            >
+            <div style={{ padding: 12, borderBottom: "1px solid #F3F4F6", flexShrink: 0 }}>
               <Input
-                prefix={<SearchOutlined style={{ color: "#D1D5DB", fontSize: 13 }} />}
+                prefix={<SearchOutlined style={{ color: "#D1D5DB" }} />}
                 placeholder="Tìm kiếm thành viên..."
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                style={{
-                  borderRadius: 8,
-                  fontSize: 12,
-                  borderColor: "#E5E7EB",
-                }}
                 allowClear
               />
             </div>
 
-            {/* Members list */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
-              {/* Root item */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 9,
-                  padding: "7px 8px",
-                  borderRadius: 8,
-                  marginBottom: 2,
-                  cursor: "pointer",
-                }}
+            {/* Scrollable member list — fixes clipped content when data is large */}
+            <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
+              <Flex
+                align="center"
+                gap={9}
+                style={{ padding: "7px 8px", borderRadius: 8, marginBottom: 2, cursor: "pointer" }}
                 onClick={() => setFocusedNodeId(null)}
               >
-                <div
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: "50%",
-                    background: "#F3F4F6",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <CrownOutlined style={{ fontSize: 13, color: "#9CA3AF" }} />
-                </div>
+                <Avatar size={30} icon={<CrownOutlined />} style={{ background: "#F3F4F6", color: "#9CA3AF" }} />
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
-                    Đấng Tối Cao
-                  </div>
-                  <div style={{ fontSize: 10, color: "#9CA3AF" }}>Khởi nguồn</div>
+                  <Text strong style={{ fontSize: 12, display: "block" }}>Đấng Tối Cao</Text>
+                  <Text type="secondary" style={{ fontSize: 10 }}>Khởi nguồn</Text>
                 </div>
-              </div>
+              </Flex>
 
-              {/* Section: Mentors */}
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  color: "#C4B5FD",
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  padding: "8px 8px 4px",
-                }}
+              <Text
+                type="secondary"
+                style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", padding: "8px 8px 4px", display: "block" }}
               >
                 Người hướng dẫn
-              </div>
+              </Text>
 
               {sidebarMembers.map((m) => {
                 const isActive = focusedNodeId === m.id;
-                const initials = getInitials(m.fullName);
                 return (
-                  <div
+                  <Flex
                     key={m.id}
+                    align="center"
+                    gap={9}
                     onClick={() => {
                       setFocusedNodeId(m.id);
                       onEyeClick(m.id);
                     }}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 9,
                       padding: "7px 8px",
                       borderRadius: 8,
                       cursor: "pointer",
                       background: isActive ? "#F5F3FF" : "transparent",
                       border: isActive ? "1px solid #DDD6FE" : "1px solid transparent",
                       marginBottom: 2,
-                      transition: "all 0.1s",
                     }}
                   >
-                    <Avatar
-                      size={30}
-                      style={{
-                        background: isActive ? "#EDE9FE" : "#F3F4F6",
-                        color: isActive ? "#6D28D9" : "#6B7280",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {initials}
+                    <Avatar size={30} style={{ background: isActive ? "#EDE9FE" : "#F3F4F6", color: isActive ? "#6D28D9" : "#6B7280" }}>
+                      {getInitials(m.fullName)}
                     </Avatar>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: isActive ? 600 : 500,
-                          color: isActive ? "#4C1D95" : "#374151",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
+                    <Flex vertical style={{ minWidth: 0, flex: 1 }}>
+                      <Text strong={isActive} style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {m.fullName}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#9CA3AF" }}>
-                        {m.branchName || "—"}
-                      </div>
-                    </div>
-                    {isActive && (
-                      <EyeOutlined
-                        style={{ fontSize: 11, color: "#8B5CF6", flexShrink: 0 }}
-                      />
-                    )}
-                  </div>
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 10 }}>{m.branchName || "—"}</Text>
+                    </Flex>
+                    {isActive && <EyeOutlined style={{ fontSize: 11, color: "#8B5CF6", flexShrink: 0 }} />}
+                  </Flex>
                 );
               })}
 
               {sidebarMembers.length === 0 && (
-                <div
-                  style={{
-                    padding: "24px 0",
-                    textAlign: "center",
-                    color: "#9CA3AF",
-                    fontSize: 12,
-                  }}
-                >
-                  Không tìm thấy thành viên
-                </div>
+                <Flex justify="center" style={{ padding: "24px 0" }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Không tìm thấy thành viên</Text>
+                </Flex>
               )}
             </div>
 
-            {/* Bottom: add button */}
-            <div
-              style={{
-                padding: "10px 12px",
-                borderTop: "1px solid #F3F4F6",
-              }}
-            >
-              <Button
-                block
-                icon={<PlusOutlined />}
-                onClick={() => openCreatePanel()}
-                style={{
-                  background: "#6D28D9",
-                  borderColor: "#6D28D9",
-                  color: "#fff",
-                  borderRadius: 8,
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
+            <div style={{ padding: 12, borderTop: "1px solid #F3F4F6", flexShrink: 0 }}>
+              <Button type="primary" block icon={<PlusOutlined />} onClick={() => openCreatePanel()}>
                 Thêm liên kết mới
               </Button>
             </div>
-          </div>
+          </Sider>
         )}
 
         {/* ── CANVAS ────────────────────────────────────────── */}
-        <div style={{ flex: 1, position: "relative", background: "#F9FAFB" }}>
+        <Content style={{ position: "relative", background: "#F9FAFB", overflow: "hidden" }}>
           {loading && (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "rgba(249,250,251,0.85)",
-                zIndex: 20,
-                backdropFilter: "blur(2px)",
-              }}
+            <Flex
+              align="center"
+              justify="center"
+              style={{ position: "absolute", inset: 0, background: "rgba(249,250,251,0.85)", zIndex: 20 }}
             >
               <Space direction="vertical" align="center">
                 <Spin size="large" />
-                <Text style={{ fontSize: 12, color: "#9CA3AF" }}>
-                  Đang tải cây môn đồ...
-                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>Đang tải cây môn đồ...</Text>
               </Space>
-            </div>
+            </Flex>
           )}
 
           <ReactFlow
@@ -2265,27 +1470,10 @@ function DiagramContent() {
             deleteKeyCode={null}
             style={{ background: "#F9FAFB" }}
           >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={18}
-              size={1}
-              color="#D1D5DB"
-            />
-            <Controls
-              style={{
-                background: "#fff",
-                border: "1px solid #E5E7EB",
-                borderRadius: 8,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-              }}
-            />
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#D1D5DB" />
+            <Controls style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }} />
             <MiniMap
-              style={{
-                background: "#fff",
-                border: "1px solid #E5E7EB",
-                borderRadius: 8,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-              }}
+              style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}
               nodeColor={(n) => {
                 if (n.id === "root") return "#9CA3AF";
                 const lvl = (n.data as any)?.level ?? 0;
@@ -2293,180 +1481,86 @@ function DiagramContent() {
               }}
             />
 
-            {/* Canvas top panel */}
             <Panel position="top-left">
-              <div
-                style={{
-                  background: "#fff",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: 8,
-                  padding: "7px 12px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "#374151",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                >
+              <Card size="small" styles={{ body: { padding: "7px 12px" } }}>
+                <Space size={6}>
                   <ApartmentOutlined style={{ color: "#6D28D9" }} />
-                  {courses.find((c) => c.id === selectedCourse)?.name ||
-                    "Cây Môn Đồ"}
+                  <Text strong style={{ fontSize: 12 }}>
+                    {courses.find((c) => c.id === selectedCourse)?.name || "Cây Môn Đồ"}
+                  </Text>
+                </Space>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    {nodes.filter((n) => n.id !== "root").length} thành viên · {edges.length} liên kết
+                  </Text>
                 </div>
-                <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 2 }}>
-                  {nodes.filter((n) => n.id !== "root").length} thành viên ·{" "}
-                  {edges.length} liên kết
-                </div>
-              </div>
+              </Card>
             </Panel>
 
-            {/* Legend */}
             <Panel position="bottom-left">
-              <div
-                style={{
-                  background: "#fff",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 5,
-                }}
-              >
-                <div style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF", marginBottom: 2 }}>
+              <Card size="small" styles={{ body: { padding: "8px 12px" } }}>
+                <Text type="secondary" style={{ fontSize: 10, fontWeight: 600, display: "block", marginBottom: 4 }}>
                   CHÚ THÍCH
-                </div>
-                {[
-                  { color: "#6D28D9", label: "Mentor cấp 1" },
-                  { color: "#2563EB", label: "Mentor cấp 2" },
-                  { color: "#0891B2", label: "Mentor cấp 3" },
-                  { color: "#6B7280", label: "Môn đồ" },
-                ].map((l) => (
-                  <div
-                    key={l.label}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
-                      fontSize: 10,
-                      color: "#6B7280",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 3,
-                        background: l.color,
-                        flexShrink: 0,
-                      }}
-                    />
-                    {l.label}
-                  </div>
-                ))}
-                <Divider style={{ margin: "3px 0", borderColor: "#F3F4F6" }} />
-                <div style={{ fontSize: 10, color: "#9CA3AF" }}>
-                  -- Đang đào tạo &nbsp; — Hoàn thành
-                </div>
-              </div>
+                </Text>
+                <Flex vertical gap={5}>
+                  {[
+                    { color: "#6D28D9", label: "Mentor cấp 1" },
+                    { color: "#2563EB", label: "Mentor cấp 2" },
+                    { color: "#0891B2", label: "Mentor cấp 3" },
+                    { color: "#6B7280", label: "Môn đồ" },
+                  ].map((l) => (
+                    <Flex key={l.label} align="center" gap={7}>
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: l.color, flexShrink: 0 }} />
+                      <Text type="secondary" style={{ fontSize: 10 }}>{l.label}</Text>
+                    </Flex>
+                  ))}
+                </Flex>
+                <Divider style={{ margin: "6px 0" }} />
+                <Text type="secondary" style={{ fontSize: 10 }}>-- Đang đào tạo &nbsp; — Hoàn thành</Text>
+              </Card>
             </Panel>
           </ReactFlow>
-        </div>
+        </Content>
 
         {/* ── RIGHT PANEL ───────────────────────────────────── */}
         {rightPanelOpen && (
-          <div
+          <Sider
+            width={320}
+            theme="light"
             style={{
-              width: 320,
-              minWidth: 320,
-              background: "#fff",
               borderLeft: "1px solid #E5E7EB",
+              height: "100%",
+              overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              overflow: "hidden",
             }}
           >
-            {/* Panel header */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "12px 14px",
-                borderBottom: "1px solid #F3F4F6",
-                flexShrink: 0,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: "#111827",
-                  }}
-                >
-                  {panelMode === "view"
-                    ? "Chi tiết thành viên"
-                    : panelMode === "create"
-                    ? "Tạo liên kết"
-                    : "Chỉnh sửa liên kết"}
-                </span>
-                {panelMode === "view" && memberDetail && (
-                  <Badge
-                    count="Đang chọn"
-                    style={{
-                      background: "#EDE9FE",
-                      color: "#6D28D9",
-                      fontSize: 9,
-                      boxShadow: "none",
-                      fontWeight: 500,
-                    }}
-                  />
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 4 }}>
+            <Flex align="center" justify="space-between" style={{ padding: 14, borderBottom: "1px solid #F3F4F6", flexShrink: 0 }}>
+              <Space size={8}>
+                <Text strong style={{ fontSize: 13 }}>
+                  {panelMode === "view" ? "Chi tiết thành viên" : panelMode === "create" ? "Tạo liên kết" : "Chỉnh sửa liên kết"}
+                </Text>
+                {panelMode === "view" && memberDetail && <Badge count="Đang chọn" color="purple" />}
+              </Space>
+              <Space size={4}>
                 {panelMode === "view" && memberDetail && (
                   <Tooltip title="Tạo liên kết từ thành viên này">
-                    <Button
-                      size="small"
-                      icon={<PlusOutlined />}
-                      onClick={() => openCreatePanel(memberDetail.member.id)}
-                      style={{
-                        borderRadius: 6,
-                        fontSize: 11,
-                        background: "#F5F3FF",
-                        borderColor: "#DDD6FE",
-                        color: "#6D28D9",
-                      }}
-                    >
+                    <Button size="small" icon={<PlusOutlined />} onClick={() => openCreatePanel(memberDetail.member.id)}>
                       Thêm môn đồ
                     </Button>
                   </Tooltip>
                 )}
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CloseOutlined style={{ fontSize: 11 }} />}
-                  onClick={closeRightPanel}
-                  style={{ color: "#9CA3AF" }}
-                />
-              </div>
-            </div>
+                <Button type="text" size="small" icon={<CloseOutlined />} onClick={closeRightPanel} />
+              </Space>
+            </Flex>
 
-            {/* Panel content */}
             <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               {panelMode === "view" ? renderDetailPanel() : renderFormPanel()}
             </div>
-          </div>
+          </Sider>
         )}
-      </div>
-    </div>
+      </Layout>
+    </Layout>
   );
 }
 
