@@ -7,7 +7,7 @@ import {
     Button,
     Descriptions,
     Divider,
-    Drawer,
+    Drawer,  // Keep if used elsewhere; otherwise can be removed
     Empty,
     Flex,
     Form,
@@ -127,7 +127,7 @@ export default function UsersPage() {
     const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
     const [selectedRows, setSelectedRows] = useState<UserTableRecord[]>([]);
 
-    // Detail drawer
+    // Detail modal
     const [detailRecord, setDetailRecord] = useState<UserTableRecord | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
 
@@ -642,120 +642,127 @@ export default function UsersPage() {
                 </Form>
             </Modal>
 
-            {/* Detail drawer */}
-            <Drawer
+            {/* Detail Modal (replaces Drawer) */}
+            <Modal
                 open={detailOpen}
-                width={420}
-                title="User details"
-                onClose={() => setDetailOpen(false)}
-                extra={
-                    detailRecord && (
-                        <Button
-                            icon={<EditOutlined />}
-                            onClick={() => {
-                                setDetailOpen(false);
-                                void openEdit(detailRecord);
-                            }}
+                width={800}
+                title={
+                    <Flex align="center" gap={12}>
+                        <Avatar
+                            size={48}
+                            style={{ backgroundColor: avatarColor(detailRecord?.fullName || '') }}
                         >
-                            Edit
-                        </Button>
+                            {detailRecord ? initials(detailRecord.fullName) || <UserOutlined /> : <UserOutlined />}
+                        </Avatar>
+                        <span style={{ fontSize: 20, fontWeight: 500 }}>
+                            {detailRecord?.fullName || 'User details'}
+                        </span>
+                        {detailRecord && (
+                            <Tag color={STATUS_COLORS[detailRecord.status] ?? 'default'} bordered={false}>
+                                {detailRecord.status}
+                            </Tag>
+                        )}
+                    </Flex>
+                }
+                onCancel={() => setDetailOpen(false)}
+                footer={
+                    detailRecord ? (
+                        <Flex justify="space-between" align="center">
+                            <Space>
+                                <Button
+                                    icon={<StopOutlined />}
+                                    onClick={() => {
+                                        void toggleStatus(detailRecord);
+                                        // Optionally refresh detail record after status change
+                                        // but we reload the list; the modal stays open.
+                                    }}
+                                >
+                                    {detailRecord.status === 'active' ? 'Deactivate' : 'Activate'}
+                                </Button>
+                                <Popconfirm
+                                    title="Delete this user?"
+                                    description="This action cannot be undone."
+                                    okText="Delete"
+                                    okButtonProps={{ danger: true }}
+                                    onConfirm={() => {
+                                        setDetailOpen(false);
+                                        handleDelete(detailRecord.id);
+                                    }}
+                                >
+                                    <Button danger icon={<DeleteOutlined />}>
+                                        Delete user
+                                    </Button>
+                                </Popconfirm>
+                            </Space>
+                            <Space>
+                                <Button
+                                    icon={<EditOutlined />}
+                                    onClick={() => {
+                                        setDetailOpen(false);
+                                        void openEdit(detailRecord);
+                                    }}
+                                >
+                                    Edit
+                                </Button>
+                                <Button type="primary" onClick={() => setDetailOpen(false)}>
+                                    Close
+                                </Button>
+                            </Space>
+                        </Flex>
+                    ) : (
+                        <Button onClick={() => setDetailOpen(false)}>Close</Button>
                     )
                 }
+                destroyOnClose
             >
                 {detailRecord ? (
                     <>
-                        <Flex align="center" gap={16}>
-                            <Avatar
-                                size={56}
-                                style={{ backgroundColor: avatarColor(detailRecord.fullName) }}
-                            >
-                                {initials(detailRecord.fullName) || <UserOutlined />}
-                            </Avatar>
-
-                            <div>
-                                <Title level={5} style={{ marginBottom: 4 }}>
-                                    {detailRecord.fullName}
-                                </Title>
-
-                                <Tag
-                                    color={STATUS_COLORS[detailRecord.status] ?? 'default'}
-                                    bordered={false}
-                                >
-                                    {detailRecord.status}
-                                </Tag>
+                        {/* Two‑column description layout */}
+                        <Flex vertical gap={24}>
+                            <div style={{ background: '#fafafa', padding: 16, borderRadius: 8 }}>
+                                <Descriptions column={2} size="middle" bordered={false}>
+                                    <Descriptions.Item label={<><MailOutlined /> Email</>}>
+                                        {detailRecord.email}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<><ApartmentOutlined /> Branch</>}>
+                                        {detailRecord.branch || '—'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<><CalendarOutlined /> Birth date</>}>
+                                        {detailRecord.birthDate ?? '—'}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<><IdcardOutlined /> User ID</>}>
+                                        <Text code copyable style={{ fontSize: 12 }}>
+                                            {detailRecord.id}
+                                        </Text>
+                                    </Descriptions.Item>
+                                </Descriptions>
                             </div>
-                        </Flex>
 
-                        <Divider style={{ margin: '20px 0' }} />
+                            <Divider style={{ margin: 0 }} orientation="start" plain>
+                                Roles
+                            </Divider>
 
-                        <Descriptions column={1} size="small">
-                            <Descriptions.Item label={<Space size={6}><MailOutlined />Email</Space>}>
-                                {detailRecord.email}
-                            </Descriptions.Item>
+                            <Space size={8} wrap>
+                                {detailRecord.roles.map((role) => (
+                                    <Tag key={role} color={ROLE_COLORS[role]} bordered={false} style={{ fontSize: 14 }}>
+                                        {role}
+                                    </Tag>
+                                ))}
+                            </Space>
 
-                            <Descriptions.Item
-                                label={<Space size={6}><ApartmentOutlined />Branch</Space>}
-                            >
-                                {detailRecord.branch || '—'}
-                            </Descriptions.Item>
+                            <Divider style={{ margin: 0 }} />
 
-                            <Descriptions.Item
-                                label={<Space size={6}><CalendarOutlined />Birth date</Space>}
-                            >
-                                {detailRecord.birthDate ?? '—'}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item
-                                label={<Space size={6}><IdcardOutlined />User ID</Space>}
-                            >
-                                <Text code copyable style={{ fontSize: 12 }}>
-                                    {detailRecord.id}
-                                </Text>
-                            </Descriptions.Item>
-                        </Descriptions>
-
-                        <Divider style={{ margin: '20px 0' }} orientation="left" plain>
-                            Roles
-                        </Divider>
-
-                        <Space size={4} wrap>
-                            {detailRecord.roles.map((role) => (
-                                <Tag key={role} color={ROLE_COLORS[role]} bordered={false}>
-                                    {role}
-                                </Tag>
-                            ))}
-                        </Space>
-
-                        <Divider style={{ margin: '24px 0' }} />
-
-                        <Flex justify="space-between" gap={8}>
-                            <Button
-                                icon={<StopOutlined />}
-                                onClick={() => void toggleStatus(detailRecord)}
-                            >
-                                {detailRecord.status === 'active' ? 'Deactivate' : 'Activate'}
-                            </Button>
-
-                            <Popconfirm
-                                title="Delete this user?"
-                                description="This action cannot be undone."
-                                okText="Delete"
-                                okButtonProps={{ danger: true }}
-                                onConfirm={() => {
-                                    setDetailOpen(false);
-                                    handleDelete(detailRecord.id);
-                                }}
-                            >
-                                <Button danger icon={<DeleteOutlined />}>
-                                    Delete user
-                                </Button>
-                            </Popconfirm>
+                            {/* Additional info if needed */}
+                            <div style={{ color: '#8c8c8c', fontSize: 13 }}>
+                                Created: {detailRecord.createdAt ? new Date(detailRecord.createdAt).toLocaleString() : '—'}
+                                &nbsp;·&nbsp; Updated: {detailRecord.updatedAt ? new Date(detailRecord.updatedAt).toLocaleString() : '—'}
+                            </div>
                         </Flex>
                     </>
                 ) : (
                     <Empty description="No user selected" />
                 )}
-            </Drawer>
+            </Modal>
         </>
     );
 }
