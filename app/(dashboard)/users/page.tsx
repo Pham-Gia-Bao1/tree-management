@@ -4,24 +4,31 @@ import { useEffect, useMemo, useState, type Key } from 'react';
 import {
     App,
     Avatar,
-    Breadcrumb,
     Button,
     Descriptions,
+    Divider,
     Drawer,
+    Empty,
+    Flex,
     Form,
     Input,
     Modal,
+    Popconfirm,
     Result,
     Select,
     Space,
-    Table,
     Tag,
+    Tooltip,
     Typography,
 } from 'antd';
 import {
+    ApartmentOutlined,
+    CalendarOutlined,
     DeleteOutlined,
     EditOutlined,
     EyeOutlined,
+    IdcardOutlined,
+    MailOutlined,
     PlusOutlined,
     StopOutlined,
     UserOutlined,
@@ -31,7 +38,7 @@ import type { UserRecord } from '@/types/user.types';
 import { RoleCode } from '@/types/database.types';
 import DataPage from '@/components/common/DataPage';
 
-const { Title, Text } = Typography;
+const { Text, Title } = Typography;
 
 type UserTableRecord = UserRecord & {
     branch: string;
@@ -47,6 +54,51 @@ const ROLE_OPTIONS: { value: RoleCode; label: string }[] = [
     { value: 'MENTOR', label: 'Mentor' },
     { value: 'MEMBER', label: 'Member' },
 ];
+
+const ROLE_COLORS: Record<RoleCode, string> = {
+    ADMIN: 'red',
+    MENTOR: 'blue',
+    MEMBER: 'green',
+};
+
+const STATUS_COLORS: Record<string, string> = {
+    active: 'success',
+    inactive: 'default',
+    pending: 'warning',
+};
+
+const STATUS_OPTIONS = [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+    { value: 'pending', label: 'Pending' },
+];
+
+const AVATAR_PALETTE = [
+    '#f56a00',
+    '#7265e6',
+    '#ffbf00',
+    '#00a2ae',
+    '#1677ff',
+    '#eb2f96',
+    '#52c41a',
+];
+
+function avatarColor(seed: string) {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) {
+        hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
+}
+
+function initials(name: string) {
+    return name
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join('');
+}
 
 export default function UsersPage() {
     const { message, modal } = App.useApp();
@@ -66,20 +118,17 @@ export default function UsersPage() {
     const [roleFilter, setRoleFilter] = useState<string>();
     const [statusFilter, setStatusFilter] = useState<string>();
 
-    const [editingRecord, setEditingRecord] =
-        useState<UserTableRecord | null>(null);
-
+    const [editingRecord, setEditingRecord] = useState<UserTableRecord | null>(null);
     const [open, setOpen] = useState(false);
-
+    const [saving, setSaving] = useState(false);
     const [form] = Form.useForm();
 
-    // --- Row selection state ---
+    // Row selection
     const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
     const [selectedRows, setSelectedRows] = useState<UserTableRecord[]>([]);
 
-    // --- Detail drawer state ---
-    const [detailRecord, setDetailRecord] =
-        useState<UserTableRecord | null>(null);
+    // Detail drawer
+    const [detailRecord, setDetailRecord] = useState<UserTableRecord | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
 
     const loadUsers = async () => {
@@ -93,13 +142,9 @@ export default function UsersPage() {
             if (roleFilter) params.set('role', roleFilter);
             if (statusFilter) params.set('status', statusFilter);
 
-            const response = await fetch(
-                `/api/users?${params.toString()}`,
-            );
+            const response = await fetch(`/api/users?${params.toString()}`);
 
-            if (!response.ok) {
-                throw new Error();
-            }
+            if (!response.ok) throw new Error();
 
             const payload = await response.json();
 
@@ -124,9 +169,7 @@ export default function UsersPage() {
 
             const response = await fetch('/api/branches');
 
-            if (!response.ok) {
-                throw new Error();
-            }
+            if (!response.ok) throw new Error();
 
             const payload = await response.json();
 
@@ -146,19 +189,14 @@ export default function UsersPage() {
     };
 
     useEffect(() => {
-        void (async () => {
-            await loadUsers();
-        })();
+        void loadUsers();
     }, []);
 
     const branchFilterOptions = useMemo(
         () =>
-            Array.from(
-                new Set(data.map((item) => item.branch).filter(Boolean)),
-            ).map((branch) => ({
-                value: branch,
-                label: branch,
-            })),
+            Array.from(new Set(data.map((item) => item.branch).filter(Boolean))).map(
+                (branch) => ({ value: branch, label: branch }),
+            ),
         [data],
     );
 
@@ -172,33 +210,30 @@ export default function UsersPage() {
                 return false;
             }
 
-            if (branchFilter && user.branch !== branchFilter) {
-                return false;
-            }
-
-            if (roleFilter && !user.roles.includes(roleFilter as RoleCode)) {
-                return false;
-            }
-
-            if (statusFilter && user.status !== statusFilter) {
-                return false;
-            }
+            if (branchFilter && user.branch !== branchFilter) return false;
+            if (roleFilter && !user.roles.includes(roleFilter as RoleCode)) return false;
+            if (statusFilter && user.status !== statusFilter) return false;
 
             return true;
         });
     }, [data, search, branchFilter, roleFilter, statusFilter]);
 
+    const clearSelection = () => {
+        setSelectedRowKeys([]);
+        setSelectedRows([]);
+    };
+
+    const handleSelectionChange = (keys: Key[], rows: UserTableRecord[]) => {
+        setSelectedRowKeys(keys);
+        setSelectedRows(rows);
+    };
+
     const openCreate = async () => {
         await loadBranches();
 
         setEditingRecord(null);
-
         form.resetFields();
-
-        form.setFieldsValue({
-            roles: ['MEMBER'],
-        });
-
+        form.setFieldsValue({ roles: ['MEMBER'], status: 'active' });
         setOpen(true);
     };
 
@@ -206,7 +241,6 @@ export default function UsersPage() {
         await loadBranches();
 
         setEditingRecord(record);
-
         form.setFieldsValue({
             name: record.fullName,
             email: record.email,
@@ -214,7 +248,6 @@ export default function UsersPage() {
             branchId: record.branchId,
             status: record.status,
         });
-
         setOpen(true);
     };
 
@@ -226,6 +259,7 @@ export default function UsersPage() {
     const handleSave = async () => {
         try {
             const values = await form.validateFields();
+            setSaving(true);
 
             const payload = {
                 name: values.name,
@@ -236,113 +270,71 @@ export default function UsersPage() {
             };
 
             if (editingRecord) {
-                const response = await fetch(
-                    `/api/users/${editingRecord.id}`,
-                    {
-                        method: 'PATCH',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(payload),
-                    },
-                );
+                const response = await fetch(`/api/users/${editingRecord.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
 
-                if (!response.ok) {
-                    throw new Error();
-                }
+                if (!response.ok) throw new Error();
 
                 message.success('User updated successfully');
             } else {
                 const response = await fetch('/api/users', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        ...payload,
-                        status: 'active',
-                    }),
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...payload, status: payload.status ?? 'active' }),
                 });
 
-                if (!response.ok) {
-                    throw new Error();
-                }
+                if (!response.ok) throw new Error();
 
                 message.success('User created successfully');
             }
 
             setOpen(false);
-
             await loadUsers();
-        } catch {
-            message.error('Failed to save user');
+        } catch (err) {
+            if (err instanceof Error) {
+                message.error('Failed to save user');
+            }
+        } finally {
+            setSaving(false);
         }
     };
 
     const handleDelete = (id: string) => {
-        modal.confirm({
-            title: 'Delete user?',
-            content: 'This action cannot be undone.',
-            okButtonProps: {
-                danger: true,
-            },
-            async onOk() {
-                try {
-                    const response = await fetch(`/api/users/${id}`, {
-                        method: 'DELETE',
-                    });
+        void (async () => {
+            try {
+                const response = await fetch(`/api/users/${id}`, { method: 'DELETE' });
 
-                    if (!response.ok) {
-                        throw new Error();
-                    }
+                if (!response.ok) throw new Error();
 
-                    message.success('User deleted successfully');
-
-                    await loadUsers();
-                } catch {
-                    message.error('Failed to delete user');
-                }
-            },
-        });
+                message.success('User deleted successfully');
+                clearSelection();
+                await loadUsers();
+            } catch {
+                message.error('Failed to delete user');
+            }
+        })();
     };
 
     const toggleStatus = async (record: UserTableRecord) => {
         try {
             const response = await fetch(`/api/users/${record.id}`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    status:
-                        record.status === 'active' ? 'inactive' : 'active',
+                    status: record.status === 'active' ? 'inactive' : 'active',
                 }),
             });
 
-            if (!response.ok) {
-                throw new Error();
-            }
+            if (!response.ok) throw new Error();
 
             message.success('User updated successfully');
-
             await loadUsers();
         } catch {
             message.error('Failed to update user');
         }
-    };
-
-    // --- Selection helpers ---
-    const clearSelection = () => {
-        setSelectedRowKeys([]);
-        setSelectedRows([]);
-    };
-
-    const handleSelectionChange = (
-        keys: Key[],
-        rows: UserTableRecord[],
-    ) => {
-        setSelectedRowKeys(keys);
-        setSelectedRows(rows);
     };
 
     const handleBulkToggleStatus = async () => {
@@ -351,23 +343,16 @@ export default function UsersPage() {
                 selectedRows.map((row) =>
                     fetch(`/api/users/${row.id}`, {
                         method: 'PATCH',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            status:
-                                row.status === 'active'
-                                    ? 'inactive'
-                                    : 'active',
+                            status: row.status === 'active' ? 'inactive' : 'active',
                         }),
                     }),
                 ),
             );
 
             message.success('Users updated successfully');
-
             clearSelection();
-
             await loadUsers();
         } catch {
             message.error('Failed to update users');
@@ -376,25 +361,20 @@ export default function UsersPage() {
 
     const handleBulkDelete = () => {
         modal.confirm({
-            title: `Delete ${selectedRows.length} user(s)?`,
+            title: `Delete ${selectedRows.length} user${selectedRows.length > 1 ? 's' : ''}?`,
             content: 'This action cannot be undone.',
-            okButtonProps: {
-                danger: true,
-            },
+            okText: 'Delete',
+            okButtonProps: { danger: true },
             async onOk() {
                 try {
                     await Promise.all(
                         selectedRows.map((row) =>
-                            fetch(`/api/users/${row.id}`, {
-                                method: 'DELETE',
-                            }),
+                            fetch(`/api/users/${row.id}`, { method: 'DELETE' }),
                         ),
                     );
 
                     message.success('Users deleted successfully');
-
                     clearSelection();
-
                     await loadUsers();
                 } catch {
                     message.error('Failed to delete users');
@@ -408,9 +388,7 @@ export default function UsersPage() {
             <Button
                 icon={<EyeOutlined />}
                 disabled={selectedRows.length !== 1}
-                onClick={() =>
-                    selectedRows[0] && openDetail(selectedRows[0])
-                }
+                onClick={() => selectedRows[0] && openDetail(selectedRows[0])}
             >
                 View
             </Button>
@@ -418,26 +396,18 @@ export default function UsersPage() {
             <Button
                 icon={<EditOutlined />}
                 disabled={selectedRows.length !== 1}
-                onClick={() =>
-                    selectedRows[0] && openEdit(selectedRows[0])
-                }
+                onClick={() => selectedRows[0] && openEdit(selectedRows[0])}
             >
                 Edit
             </Button>
 
             <Button icon={<StopOutlined />} onClick={handleBulkToggleStatus}>
-                Toggle Status
+                Toggle status
             </Button>
 
-            <Button
-                danger
-                icon={<DeleteOutlined />}
-                onClick={handleBulkDelete}
-            >
+            <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
                 Delete
             </Button>
-
-            <Button onClick={clearSelection}>Cancel</Button>
         </>
     );
 
@@ -447,15 +417,23 @@ export default function UsersPage() {
             dataIndex: 'name',
             width: 280,
             render: (_: string, record: UserTableRecord) => (
-                <div className="flex items-center gap-3">
-                    <Avatar size={32} icon={<UserOutlined />} />
-                    <div>
-                        <div className="font-medium">{record.fullName}</div>
-                        <div className="text-xs text-gray-500">
-                            {record.email}
+                <Flex align="center" gap={12}>
+                    <Avatar
+                        size={36}
+                        style={{ backgroundColor: avatarColor(record.fullName), flexShrink: 0 }}
+                    >
+                        {initials(record.fullName) || <UserOutlined />}
+                    </Avatar>
+
+                    <div style={{ minWidth: 0 }}>
+                        <div className="font-medium" style={{ lineHeight: 1.3 }}>
+                            {record.fullName}
                         </div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {record.email}
+                        </Text>
                     </div>
-                </div>
+                </Flex>
             ),
         },
         {
@@ -465,7 +443,9 @@ export default function UsersPage() {
             render: (value: RoleCode[]) => (
                 <Space size={4} wrap>
                     {value.map((role) => (
-                        <Tag key={role}>{role}</Tag>
+                        <Tag key={role} color={ROLE_COLORS[role]} bordered={false}>
+                            {role}
+                        </Tag>
                     ))}
                 </Space>
             ),
@@ -474,19 +454,20 @@ export default function UsersPage() {
             title: 'Branch',
             dataIndex: 'branch',
             width: 180,
+            render: (value: string) => value || <Text type="secondary">—</Text>,
         },
         {
-            title: 'Birth Date',
+            title: 'Birth date',
             dataIndex: 'birthDate',
             width: 140,
-            render: (value: string | null) => value ?? '-',
+            render: (value: string | null) => value ?? <Text type="secondary">—</Text>,
         },
         {
             title: 'Status',
             dataIndex: 'status',
             width: 120,
             render: (value: string) => (
-                <Tag color={value === 'active' ? 'success' : 'default'}>
+                <Tag color={STATUS_COLORS[value] ?? 'default'} bordered={false}>
                     {value}
                 </Tag>
             ),
@@ -497,30 +478,41 @@ export default function UsersPage() {
             align: 'right' as const,
             render: (_: unknown, record: UserTableRecord) => (
                 <Space size={4}>
-                    <Button
-                        size="small"
-                        icon={<EyeOutlined />}
-                        onClick={() => openDetail(record)}
-                    />
+                    <Tooltip title="View details">
+                        <Button
+                            size="small"
+                            icon={<EyeOutlined />}
+                            onClick={() => openDetail(record)}
+                        />
+                    </Tooltip>
 
-                    <Button
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={() => openEdit(record)}
-                    />
+                    <Tooltip title="Edit">
+                        <Button
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => openEdit(record)}
+                        />
+                    </Tooltip>
 
-                    <Button
-                        size="small"
-                        icon={<StopOutlined />}
-                        onClick={() => toggleStatus(record)}
-                    />
+                    <Tooltip title={record.status === 'active' ? 'Deactivate' : 'Activate'}>
+                        <Button
+                            size="small"
+                            icon={<StopOutlined />}
+                            onClick={() => toggleStatus(record)}
+                        />
+                    </Tooltip>
 
-                    <Button
-                        danger
-                        size="small"
-                        icon={<DeleteOutlined />}
-                        onClick={() => handleDelete(record.id)}
-                    />
+                    <Popconfirm
+                        title="Delete this user?"
+                        description="This action cannot be undone."
+                        okText="Delete"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => handleDelete(record.id)}
+                    >
+                        <Tooltip title="Delete">
+                            <Button danger size="small" icon={<DeleteOutlined />} />
+                        </Tooltip>
+                    </Popconfirm>
                 </Space>
             ),
         },
@@ -538,269 +530,232 @@ export default function UsersPage() {
 
     return (
         <>
-    
-<DataPage<UserTableRecord>
-    title="Users"
-    subtitle="Manage system users"
-    breadcrumbs={['Administration', 'Users']}
-    loading={loading}
-    columns={columns}
-    dataSource={filteredData}
-    onRefresh={() => void loadUsers()}
-    searchable
-    searchPlaceholder="Search users..."
-    onSearch={setSearch}
-    selectable
-    selectedRowKeys={selectedRowKeys}
-    onSelectedRowKeysChange={handleSelectionChange}
-    selectionActions={selectionActions}
-    actions={
-        <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={openCreate}
-        >
-            New User
-        </Button>
-    }
-    filters={
-        <>
-            <Select
-                allowClear
-                placeholder="Branch"
-                style={{ width: 180 }}
-                options={branchFilterOptions}
-                onChange={setBranchFilter}
-            />
+            <DataPage<UserTableRecord>
+                title="Users"
+                subtitle="Manage system users"
+                breadcrumbs={['Administration', 'Users']}
+                loading={loading}
+                columns={columns}
+                dataSource={filteredData}
+                onRefresh={() => void loadUsers()}
+                searchable
+                searchPlaceholder="Search by name or email..."
+                onSearch={setSearch}
+                selectable
+                selectedRowKeys={selectedRowKeys}
+                onSelectedRowKeysChange={handleSelectionChange}
+                selectionActions={selectionActions}
+                selectionLabel="user"
+                actions={
+                    <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                        New user
+                    </Button>
+                }
+                filters={
+                    <>
+                        <Select
+                            allowClear
+                            placeholder="Branch"
+                            style={{ width: 180 }}
+                            options={branchFilterOptions}
+                            onChange={setBranchFilter}
+                        />
 
-            <Select
-                allowClear
-                placeholder="Role"
-                style={{ width: 140 }}
-                onChange={setRoleFilter}
-                options={ROLE_OPTIONS}
-            />
+                        <Select
+                            allowClear
+                            placeholder="Role"
+                            style={{ width: 140 }}
+                            onChange={setRoleFilter}
+                            options={ROLE_OPTIONS}
+                        />
 
-            <Select
-                allowClear
-                placeholder="Status"
-                style={{ width: 140 }}
-                onChange={setStatusFilter}
-                options={[
-                    {
-                        value: 'active',
-                        label: 'Active',
-                    },
-                    {
-                        value: 'inactive',
-                        label: 'Inactive',
-                    },
-                    {
-                        value: 'pending',
-                        label: 'Pending',
-                    },
-                ]}
-            />
-        </>
-    }
-    tableProps={{
-        size: 'middle',
-        sticky: true,
-        scroll: {
-            x: 1200,
-        },
-    }}
-/>
-<Modal
-    open={open}
-    width={520}
-    title={
-        editingRecord
-            ? 'Edit User'
-            : 'Create User'
-    }
-    onCancel={() => setOpen(false)}
-    onOk={handleSave}
-    okText="Save"
->
-    <Form
-        form={form}
-        layout="vertical"
-        className="mt-4"
-    >
-        <Form.Item
-            name="name"
-            label="Full Name"
-            rules={[
-                {
-                    required: true,
-                },
-            ]}
-        >
-            <Input />
-        </Form.Item>
-
-        <Form.Item
-            name="email"
-            label="Email"
-            rules={[
-                {
-                    required: true,
-                    type: 'email',
-                },
-            ]}
-        >
-            <Input />
-        </Form.Item>
-
-        <Form.Item
-            name="branchId"
-            label="Branch"
-            rules={[
-                {
-                    required: true,
-                    message:
-                        'Branch is required',
-                },
-            ]}
-        >
-            <Select
-                loading={branchLoading}
-                placeholder="Select branch"
-                options={branchOptions}
-                showSearch
-                optionFilterProp="label"
-            />
-        </Form.Item>
-
-        <Form.Item
-            name="roles"
-            label="Roles"
-            rules={[
-                {
-                    required: true,
-                    message:
-                        'At least one role is required',
-                },
-            ]}
-        >
-            <Select
-                mode="multiple"
-                placeholder="Select roles"
-                options={ROLE_OPTIONS}
-            />
-        </Form.Item>
-
-        <Form.Item
-            name="status"
-            label="Status"
-            initialValue="active"
-            rules={[
-                {
-                    required: true,
-                    message:
-                        'Status is required',
-                },
-            ]}
-        >
-            <Select
-                options={[
-                    {
-                        value: 'active',
-                        label: 'Active',
-                    },
-                    {
-                        value: 'inactive',
-                        label: 'Inactive',
-                    },
-                    {
-                        value: 'pending',
-                        label: 'Pending',
-                    },
-                ]}
-            />
-        </Form.Item>
-    </Form>
-</Modal>
-
-<Drawer
-    open={detailOpen}
-    width={420}
-    title="User Details"
-    onClose={() => setDetailOpen(false)}
-    extra={
-        detailRecord && (
-            <Button
-                icon={<EditOutlined />}
-                onClick={() => {
-                    setDetailOpen(false);
-                    void openEdit(detailRecord);
+                        <Select
+                            allowClear
+                            placeholder="Status"
+                            style={{ width: 140 }}
+                            onChange={setStatusFilter}
+                            options={STATUS_OPTIONS}
+                        />
+                    </>
+                }
+                tableProps={{
+                    size: 'middle',
+                    sticky: true,
+                    scroll: { x: 1200 },
                 }}
+            />
+
+            {/* Create / Edit modal */}
+            <Modal
+                open={open}
+                width={520}
+                title={editingRecord ? 'Edit user' : 'Create user'}
+                onCancel={() => setOpen(false)}
+                onOk={handleSave}
+                okText="Save"
+                confirmLoading={saving}
+                destroyOnClose
             >
-                Edit
-            </Button>
-        )
-    }
->
-    {detailRecord && (
-        <>
-            <div className="flex items-center gap-3 mb-6">
-                <Avatar size={48} icon={<UserOutlined />} />
-                <div>
-                    <div className="text-base font-medium">
-                        {detailRecord.fullName}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                        {detailRecord.email}
-                    </div>
-                </div>
-            </div>
+                <Form form={form} layout="vertical" className="mt-4">
+                    <Form.Item name="name" label="Full name" rules={[{ required: true }]}>
+                        <Input placeholder="Jane Doe" />
+                    </Form.Item>
 
-            <Descriptions column={1} bordered size="small">
-                <Descriptions.Item label="Full Name">
-                    {detailRecord.fullName}
-                </Descriptions.Item>
-
-                <Descriptions.Item label="Email">
-                    {detailRecord.email}
-                </Descriptions.Item>
-
-                <Descriptions.Item label="Roles">
-                    <Space size={4} wrap>
-                        {detailRecord.roles.map((role) => (
-                            <Tag key={role}>{role}</Tag>
-                        ))}
-                    </Space>
-                </Descriptions.Item>
-
-                <Descriptions.Item label="Branch">
-                    {detailRecord.branch || '-'}
-                </Descriptions.Item>
-
-                <Descriptions.Item label="Status">
-                    <Tag
-                        color={
-                            detailRecord.status === 'active'
-                                ? 'success'
-                                : 'default'
-                        }
+                    <Form.Item
+                        name="email"
+                        label="Email"
+                        rules={[{ required: true, type: 'email' }]}
                     >
-                        {detailRecord.status}
-                    </Tag>
-                </Descriptions.Item>
+                        <Input placeholder="jane@example.com" />
+                    </Form.Item>
 
-                <Descriptions.Item label="Birth Date">
-                    {detailRecord.birthDate ?? '-'}
-                </Descriptions.Item>
+                    <Form.Item
+                        name="branchId"
+                        label="Branch"
+                        rules={[{ required: true, message: 'Branch is required' }]}
+                    >
+                        <Select
+                            loading={branchLoading}
+                            placeholder="Select branch"
+                            options={branchOptions}
+                            showSearch
+                            optionFilterProp="label"
+                        />
+                    </Form.Item>
 
-                <Descriptions.Item label="User ID">
-                    {detailRecord.id}
-                </Descriptions.Item>
-            </Descriptions>
-        </>
-    )}
-</Drawer>
+                    <Form.Item
+                        name="roles"
+                        label="Roles"
+                        rules={[{ required: true, message: 'At least one role is required' }]}
+                    >
+                        <Select mode="multiple" placeholder="Select roles" options={ROLE_OPTIONS} />
+                    </Form.Item>
 
+                    <Form.Item
+                        name="status"
+                        label="Status"
+                        initialValue="active"
+                        rules={[{ required: true, message: 'Status is required' }]}
+                    >
+                        <Select options={STATUS_OPTIONS} />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            {/* Detail drawer */}
+            <Drawer
+                open={detailOpen}
+                width={420}
+                title="User details"
+                onClose={() => setDetailOpen(false)}
+                extra={
+                    detailRecord && (
+                        <Button
+                            icon={<EditOutlined />}
+                            onClick={() => {
+                                setDetailOpen(false);
+                                void openEdit(detailRecord);
+                            }}
+                        >
+                            Edit
+                        </Button>
+                    )
+                }
+            >
+                {detailRecord ? (
+                    <>
+                        <Flex align="center" gap={16}>
+                            <Avatar
+                                size={56}
+                                style={{ backgroundColor: avatarColor(detailRecord.fullName) }}
+                            >
+                                {initials(detailRecord.fullName) || <UserOutlined />}
+                            </Avatar>
+
+                            <div>
+                                <Title level={5} style={{ marginBottom: 4 }}>
+                                    {detailRecord.fullName}
+                                </Title>
+
+                                <Tag
+                                    color={STATUS_COLORS[detailRecord.status] ?? 'default'}
+                                    bordered={false}
+                                >
+                                    {detailRecord.status}
+                                </Tag>
+                            </div>
+                        </Flex>
+
+                        <Divider style={{ margin: '20px 0' }} />
+
+                        <Descriptions column={1} size="small">
+                            <Descriptions.Item label={<Space size={6}><MailOutlined />Email</Space>}>
+                                {detailRecord.email}
+                            </Descriptions.Item>
+
+                            <Descriptions.Item
+                                label={<Space size={6}><ApartmentOutlined />Branch</Space>}
+                            >
+                                {detailRecord.branch || '—'}
+                            </Descriptions.Item>
+
+                            <Descriptions.Item
+                                label={<Space size={6}><CalendarOutlined />Birth date</Space>}
+                            >
+                                {detailRecord.birthDate ?? '—'}
+                            </Descriptions.Item>
+
+                            <Descriptions.Item
+                                label={<Space size={6}><IdcardOutlined />User ID</Space>}
+                            >
+                                <Text code copyable style={{ fontSize: 12 }}>
+                                    {detailRecord.id}
+                                </Text>
+                            </Descriptions.Item>
+                        </Descriptions>
+
+                        <Divider style={{ margin: '20px 0' }} orientation="left" plain>
+                            Roles
+                        </Divider>
+
+                        <Space size={4} wrap>
+                            {detailRecord.roles.map((role) => (
+                                <Tag key={role} color={ROLE_COLORS[role]} bordered={false}>
+                                    {role}
+                                </Tag>
+                            ))}
+                        </Space>
+
+                        <Divider style={{ margin: '24px 0' }} />
+
+                        <Flex justify="space-between" gap={8}>
+                            <Button
+                                icon={<StopOutlined />}
+                                onClick={() => void toggleStatus(detailRecord)}
+                            >
+                                {detailRecord.status === 'active' ? 'Deactivate' : 'Activate'}
+                            </Button>
+
+                            <Popconfirm
+                                title="Delete this user?"
+                                description="This action cannot be undone."
+                                okText="Delete"
+                                okButtonProps={{ danger: true }}
+                                onConfirm={() => {
+                                    setDetailOpen(false);
+                                    handleDelete(detailRecord.id);
+                                }}
+                            >
+                                <Button danger icon={<DeleteOutlined />}>
+                                    Delete user
+                                </Button>
+                            </Popconfirm>
+                        </Flex>
+                    </>
+                ) : (
+                    <Empty description="No user selected" />
+                )}
+            </Drawer>
         </>
     );
 }
