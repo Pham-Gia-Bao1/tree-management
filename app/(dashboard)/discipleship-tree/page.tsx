@@ -122,8 +122,7 @@ type MemberDetail = {
 type PanelMode = "view" | "create" | "edit";
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS — level-based color palette (colors only; layout/spacing
-// now comes from antd's theme via components, not inline CSS)
+// DESIGN TOKENS — level-based color palette
 // ─────────────────────────────────────────────────────────────
 
 const LEVEL_PALETTE = [
@@ -198,7 +197,7 @@ const getInitials = (name?: string) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// LAYOUT ENGINE — Reingold-Tilford style with proper spacing
+// LAYOUT ENGINE — Reingold-Tilford style
 // ─────────────────────────────────────────────────────────────
 
 const NODE_W = 210;
@@ -428,10 +427,7 @@ function buildTree(
 }
 
 // ─────────────────────────────────────────────────────────────
-// CUSTOM NODES — React Flow nodes are rendered on an absolutely
-// positioned canvas, so they intentionally keep their own inline
-// styles (antd components don't apply here). Everything *around*
-// the canvas (toolbar, sidebar, side panel, forms) uses antd.
+// CUSTOM NODES
 // ─────────────────────────────────────────────────────────────
 
 const RootNode = ({ data }: { data: any }) => {
@@ -1345,7 +1341,8 @@ function DiagramContent() {
       </Flex>
 
       {/* ── BODY ────────────────────────────────────────────── */}
-      <Layout style={{ overflow: "hidden" }}>
+      {/* 👇 THÊM flex:1 và overflow:hidden để chiếm đúng phần còn lại */}
+      <Layout style={{ flex: 1, overflow: "hidden" }}>
         {/* ── LEFT SIDEBAR ──────────────────────────────────── */}
         {sidebarOpen && (
           <Sider
@@ -1369,7 +1366,6 @@ function DiagramContent() {
               />
             </div>
 
-            {/* Scrollable member list — fixes clipped content when data is large */}
             <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
               <Flex
                 align="center"
@@ -1565,7 +1561,7 @@ function DiagramContent() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// EXPORT — wrap with ReactFlowProvider + App (for message API)
+// EXPORT
 // ─────────────────────────────────────────────────────────────
 
 export default function DiscipleshipTree() {
