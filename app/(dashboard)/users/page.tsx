@@ -748,13 +748,6 @@ export default function UsersPage() {
                                 </Tag>
                             ))}
                         </Space>
-
-                        <Divider style={{ margin: 0 }} />
-
-                        <div style={{ color: '#8c8c8c', fontSize: 13 }}>
-                            Created: {detailRecord.createdAt ? new Date(detailRecord.createdAt).toLocaleString() : '—'}
-                            &nbsp;·&nbsp; Updated: {detailRecord.updatedAt ? new Date(detailRecord.updatedAt).toLocaleString() : '—'}
-                        </div>
                     </Flex>
                 ) : (
                     <Empty description="No user selected" />
