@@ -51,7 +51,6 @@
     "Button": {
       "borderRadius": 10,
       "controlHeight": 44,
-
       "fontWeight": 600,
 
       "defaultBorderColor": "#E7E8F2",
@@ -175,7 +174,6 @@
 
     "Segmented": {
       "trackBg": "#F3F4F8",
-
       "itemSelectedBg": "#FFFFFF"
     },
 
