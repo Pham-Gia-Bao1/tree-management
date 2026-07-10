@@ -1,214 +1,210 @@
 {
   "token": {
-    "colorPrimary": "#111827",
-    "colorPrimaryBg": "#111827",
-    "colorPrimaryHover": "#374151",
-    "colorPrimaryActive": "#000000",
-    "colorPrimaryBorder": "#111827",
-    "colorPrimaryText": "#FFFFFF",
-    "colorBgBase": "#EEF0F2",
+    "colorPrimary": "#18B7C9",
+    "colorSuccess": "#22C55E",
+    "colorWarning": "#F59E0B",
+    "colorError": "#EF4444",
+    "colorInfo": "#18B7C9",
+
+    "colorText": "#2F3A45",
+    "colorTextSecondary": "#64748B",
+    "colorTextTertiary": "#94A3B8",
+
+    "colorBgBase": "#F7F9FB",
+    "colorBgLayout": "#F4F7FA",
     "colorBgContainer": "#FFFFFF",
     "colorBgElevated": "#FFFFFF",
-    "colorBgLayout": "#EEF0F2",
-    "colorBgSpotlight": "#111827",
-    "colorText": "#111827",
-    "colorTextSecondary": "#6B7280",
-    "colorTextTertiary": "#9CA3AF",
-    "colorTextQuaternary": "#D1D5DB",
-    "colorTextLightSolid": "#FFFFFF",
-    "borderRadius": 16,
-    "borderRadiusLG": 16,
-    "borderRadiusSM": 8,
+
+    "colorBorder": "#DCE5EC",
+    "colorBorderSecondary": "#EDF2F7",
+
+    "borderRadius": 8,
+    "borderRadiusSM": 6,
+    "borderRadiusLG": 12,
     "borderRadiusXS": 4,
-    "fontFamily": "system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+
+    "fontFamily": "\"Inter\", sans-serif",
     "fontSize": 14,
-    "fontSizeHeading1": 28,
-    "fontSizeHeading2": 24,
-    "fontSizeHeading3": 20,
-    "fontSizeHeading4": 16,
-    "fontSizeHeading5": 14,
-    "boxShadow": "0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1)",
-    "boxShadowSecondary": "0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)",
+
     "controlHeight": 40,
-    "controlHeightLG": 48,
-    "controlHeightSM": 32,
-    "padding": 16,
-    "paddingLG": 24,
-    "paddingSM": 8,
-    "margin": 16,
-    "marginLG": 24,
-    "marginSM": 8,
-    "wireframe": false
+    "controlHeightSM": 34,
+    "controlHeightLG": 44,
+
+    "boxShadow": "0 1px 2px rgba(15,23,42,.04)",
+    "boxShadowSecondary": "0 4px 12px rgba(15,23,42,.05)",
+    "boxShadowTertiary": "none"
   },
+
   "components": {
-    "Button": {
-      "colorPrimary": "#111827",
-      "colorPrimaryHover": "#374151",
-      "colorPrimaryActive": "#000000",
-      "borderRadius": 12,
-      "controlHeight": 40,
-      "fontWeight": 500,
-      "paddingContentHorizontal": 16,
-      "colorText": "#111827",
-      "colorTextLightSolid": "#FFFFFF",
-      "defaultBorderColor": "#E5E7EB"
+    "Layout": {
+      "bodyBg": "#F4F7FA",
+      "headerBg": "#FFFFFF",
+      "siderBg": "#FFFFFF"
     },
+
     "Card": {
-      "borderRadius": 16,
-      "boxShadow": "0 1px 3px 0 rgba(0,0,0,0.1)",
-      "padding": 20,
-      "headerFontSize": 14,
-      "headerHeight": 48
+      "borderRadiusLG": 10,
+      "bodyPadding": 20,
+      "headerPadding": 20
     },
+
+    "Button": {
+      "borderRadius": 6,
+      "controlHeight": 36,
+
+      "fontWeight": 500,
+
+      "defaultBorderColor": "#D7E2EA",
+      "defaultHoverBorderColor": "#18B7C9",
+
+      "defaultShadow": "none",
+      "primaryShadow": "none",
+
+      "colorPrimary": "#18B7C9",
+      "colorPrimaryHover": "#22C7D9",
+      "colorPrimaryActive": "#1096A5"
+    },
+
     "Input": {
-      "borderRadius": 12,
-      "controlHeight": 40,
-      "colorBgContainer": "#F9FAFB",
-      "colorBorder": "#E5E7EB",
-      "colorText": "#111827",
+      "borderRadius": 6,
+      "controlHeight": 38,
+
       "paddingInline": 12,
-      "activeBorderColor": "#111827",
-      "hoverBorderColor": "#9CA3AF"
+
+      "hoverBorderColor": "#59D2DE",
+      "activeBorderColor": "#18B7C9",
+      "activeShadow": "0 0 0 3px rgba(24,183,201,.15)"
     },
+
+    "InputNumber": {
+      "borderRadius": 6,
+      "controlHeight": 38,
+      "activeBorderColor": "#18B7C9"
+    },
+
     "Select": {
-      "borderRadius": 12,
-      "controlHeight": 40,
-      "colorBgContainer": "#F9FAFB",
-      "colorBorder": "#E5E7EB",
-      "optionSelectedBg": "#F3F4F6",
-      "optionSelectedColor": "#111827"
+      "borderRadius": 6,
+      "controlHeight": 38,
+
+      "optionHeight": 36,
+
+      "optionSelectedBg": "#EAFBFD",
+      "optionActiveBg": "#F5FEFF",
+
+      "hoverBorderColor": "#59D2DE",
+      "activeBorderColor": "#18B7C9"
     },
-    "Table": {
-      "borderRadius": 16,
-      "headerBg": "#F9FAFB",
-      "headerColor": "#6B7280",
-      "headerSplitColor": "#F3F4F6",
-      "rowHoverBg": "#F9FAFB",
-      "borderColor": "#F3F4F6"
-    },
-    "Modal": {
-      "borderRadius": 16,
-      "padding": 24,
-      "headerBg": "#FFFFFF",
-      "footerBg": "#FFFFFF",
-      "contentBg": "#FFFFFF"
-    },
-    "Dropdown": {
-      "borderRadius": 12,
-      "controlHeight": 36
-    },
-    "Menu": {
-      "borderRadius": 12,
-      "itemHoverColor": "#111827",
-      "itemSelectedColor": "#111827",
-      "itemSelectedBg": "#F3F4F6",
-      "itemHoverBg": "#F9FAFB"
-    },
-    "Tabs": {
-      "cardBg": "#FFFFFF",
-      "cardGutter": 8,
-      "inkBarColor": "#111827",
-      "itemSelectedColor": "#111827",
-      "itemColor": "#6B7280",
-      "itemHoverColor": "#111827"
-    },
-    "Tag": {
-      "borderRadius": 8
-    },
-    "Popover": {
-      "borderRadius": 12
-    },
-    "Tooltip": {
-      "borderRadius": 8,
-      "colorBgSpotlight": "#111827",
-      "colorTextLightSolid": "#FFFFFF"
-    },
-    "Drawer": {
-      "borderRadius": 16
-    },
-    "Pagination": {
-      "borderRadius": 8,
-      "controlHeight": 32,
-      "itemActiveBg": "#111827",
-      "colorPrimary": "#111827"
-    },
+
     "DatePicker": {
-      "borderRadius": 12,
-      "controlHeight": 40,
-      "colorBgContainer": "#F9FAFB"
+      "borderRadius": 6,
+      "controlHeight": 38,
+      "activeBorderColor": "#18B7C9"
     },
-    "Switch": {
-      "colorPrimary": "#111827",
-      "colorPrimaryHover": "#374151"
+
+    "TimePicker": {
+      "borderRadius": 6,
+      "controlHeight": 38,
+      "activeBorderColor": "#18B7C9"
     },
-    "Checkbox": {
-      "colorPrimary": "#111827",
-      "colorPrimaryHover": "#374151"
+
+    "Table": {
+      "borderRadiusLG": 10,
+
+      "headerBg": "#F8FAFC",
+      "headerColor": "#475569",
+
+      "rowHoverBg": "#F4FCFD",
+      "rowSelectedBg": "#EAFBFD",
+
+      "borderColor": "#E2E8F0",
+
+      "cellPaddingBlock": 14,
+      "cellPaddingInline": 16
     },
-    "Radio": {
-      "colorPrimary": "#111827",
-      "colorPrimaryHover": "#374151"
+
+    "Menu": {
+      "itemHeight": 40,
+
+      "itemBorderRadius": 6,
+
+      "itemColor": "#64748B",
+
+      "itemHoverBg": "#F1FCFD",
+      "itemHoverColor": "#18B7C9",
+
+      "itemSelectedBg": "#EAFBFD",
+      "itemSelectedColor": "#1096A5"
     },
-    "Slider": {
-      "colorPrimary": "#111827",
-      "colorPrimaryHover": "#374151"
+
+    "Tabs": {
+      "itemColor": "#64748B",
+      "itemHoverColor": "#18B7C9",
+      "itemSelectedColor": "#18B7C9",
+
+      "inkBarColor": "#18B7C9",
+
+      "horizontalItemPadding": "10px 0"
     },
-    "Progress": {
-      "colorPrimary": "#111827",
-      "colorText": "#6B7280"
+
+    "Modal": {
+      "borderRadiusLG": 10
     },
-    "Spin": {
-      "colorPrimary": "#111827"
+
+    "Drawer": {
+      "borderRadiusLG": 10
     },
-    "Breadcrumb": {
-      "lastItemColor": "#111827",
-      "itemColor": "#6B7280"
+
+    "Dropdown": {
+      "borderRadiusLG": 8
     },
-    "Steps": {
-      "colorPrimary": "#111827",
-      "colorText": "#6B7280"
+
+    "Popover": {
+      "borderRadiusLG": 8
     },
-    "Alert": {
-      "borderRadius": 12
+
+    "Tooltip": {
+      "borderRadius": 6
     },
-    "Message": {
-      "borderRadius": 12
+
+    "Pagination": {
+      "borderRadius": 6
     },
-    "Notification": {
-      "borderRadius": 12
-    },
-    "Upload": {
-      "borderRadius": 12
-    },
-    "Tree": {
-      "borderRadius": 8,
-      "itemHoverBg": "#F9FAFB",
-      "itemSelectedBg": "#F3F4F6"
-    },
-    "Transfer": {
-      "borderRadius": 12
-    },
-    "Typography": {
-      "colorText": "#111827",
-      "colorTextHeading": "#111827"
-    },
+
     "Collapse": {
-      "borderRadius": 12,
-      "headerBg": "#FFFFFF",
-      "contentBg": "#FFFFFF"
+      "borderRadiusLG": 10
     },
+
+    "Segmented": {
+      "trackBg": "#EEF5F7",
+      "itemSelectedBg": "#FFFFFF"
+    },
+
+    "Tag": {
+      "borderRadiusSM": 999
+    },
+
+    "Checkbox": {
+      "colorPrimary": "#18B7C9"
+    },
+
+    "Radio": {
+      "colorPrimary": "#18B7C9"
+    },
+
+    "Switch": {
+      "colorPrimary": "#18B7C9"
+    },
+
+    "Divider": {
+      "colorSplit": "#E5EDF3"
+    },
+
+    "Descriptions": {
+      "labelBg": "#F8FAFC"
+    },
+
     "List": {
-      "borderRadius": 12
-    },
-    "Timeline": {
-      "dotBg": "#FFFFFF",
-      "dotBorderColor": "#E5E7EB"
-    },
-    "Skeleton": {
-      "borderRadius": 8
-    },
-    "Empty": {
-      "colorText": "#9CA3AF"
+      "colorBorder": "#E5EDF3"
     }
   }
 }
